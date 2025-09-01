@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
       FROM Limite_Credito
     `;
     
-    let request = pool.request();
+    const request = pool.request();
 
     if (id_personal) {
       query += " WHERE id_personal = @id_personal";

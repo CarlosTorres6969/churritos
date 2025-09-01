@@ -77,7 +77,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Validación de precios
-    const validarPrecio = (precio: any, campo: string) => {
+    const validarPrecio = (precio: unknown, campo: string) => {
       const num = Number(precio);
       if (isNaN(num) || num < 0) {
         throw new Error(`El ${campo} debe ser un número positivo`);
@@ -232,7 +232,7 @@ export async function PUT(req: NextRequest) {
     }
 
     // Validación de precios
-    const validarPrecio = (precio: any, campo: string) => {
+    const validarPrecio = (precio: unknown, campo: string) => {
       const num = Number(precio);
       if (isNaN(num) || num < 0) {
         throw new Error(`El ${campo} debe ser un número positivo`);
@@ -312,6 +312,7 @@ export async function PUT(req: NextRequest) {
     if (pool) await closeConnection(pool);
   }
 }
+
 // DELETE - Eliminar producto por ID
 export async function DELETE(req: NextRequest) {
   let pool;

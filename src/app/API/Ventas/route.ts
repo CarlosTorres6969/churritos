@@ -26,6 +26,9 @@ export async function GET(req: NextRequest) {
   const pool = await getConnection();
   const { searchParams } = new URL(req.url);
   const id_venta = searchParams.get('id_venta');
+  const id_vendedor = searchParams.get('id_vendedor');
+  const fecha = searchParams.get('fecha');
+  const id_cliente = searchParams.get('id_cliente');
   const page = parseInt(searchParams.get('page') || '1');
   const pageSize = parseInt(searchParams.get('pageSize') || '10');
 
@@ -89,30 +92,85 @@ export async function GET(req: NextRequest) {
           detalles_venta: detallesRequest.recordset
         }
       });
-    } else {
-      // Obtener listado de ventas con paginación
-      const ventasRequest = await pool
+    } else if (id_cliente) {
+      // Obtener tipos de precios disponibles según tipo de cliente
+      const clienteRequest = await pool
         .request()
-        .input("pageSize", sql.Int, pageSize)
-        .input("offset", sql.Int, (page - 1) * pageSize)
+        .input("id_cliente", sql.Int, id_cliente)
         .query(`
-          SELECT 
-            v.id_venta,
-            v.fecha_venta,
-            v.total,
-            v.tipo_pago,
-            c.nombre AS nombre_cliente,
-            p.nombre AS nombre_personal,
-            COUNT(*) OVER() AS total_count
-          FROM Venta v
-          JOIN clientes c ON v.id_cliente = c.id_cliente
-          JOIN Personal p ON v.id_personal = p.id_personal
-          ORDER BY v.fecha_venta DESC
-          OFFSET @offset ROWS
-          FETCH NEXT @pageSize ROWS ONLY
+          SELECT tipo_cliente
+          FROM clientes
+          WHERE id_cliente = @id_cliente AND activo = 1
         `);
 
-      const totalCount = ventasRequest.recordset[0]?.total_count || 0;
+      if (clienteRequest.recordset.length === 0) {
+        return NextResponse.json({ success: false, error: "Cliente no encontrado o inactivo" }, { status: 404 });
+      }
+
+      const { tipo_cliente } = clienteRequest.recordset[0];
+      let availablePrices: string[] = [];
+
+      if (tipo_cliente.includes("mayorista")) {
+        availablePrices = ["mayorista"];
+      } else {
+        availablePrices = ["completo", "medio"];
+      }
+
+      return NextResponse.json({
+        success: true,
+        data: {
+          id_cliente,
+          tipo_cliente,
+          availablePrices
+        }
+      });
+    } else {
+      // Obtener listado de ventas con paginación Y FILTRADO
+      let query = `
+        SELECT 
+          v.id_venta,
+          v.fecha_venta,
+          v.total,
+          v.tipo_pago,
+          c.nombre AS nombre_cliente,
+          p.nombre AS nombre_personal,
+          v.id_personal,
+          v.id_cliente,
+          ISNULL(dv.total_productos, 0) AS total_productos,
+          COUNT(*) OVER() AS total_count
+        FROM Venta v
+        JOIN clientes c ON v.id_cliente = c.id_cliente
+        JOIN Personal p ON v.id_personal = p.id_personal
+        LEFT JOIN (
+          SELECT 
+            id_venta, 
+            SUM(cantidad) AS total_productos 
+          FROM Detalle_Venta 
+          GROUP BY id_venta
+        ) dv ON v.id_venta = dv.id_venta
+        WHERE 1 = 1
+      `;
+      
+      const request = pool.request();
+      
+      if (id_vendedor) {
+        query += " AND v.id_personal = @id_vendedor";
+        request.input("id_vendedor", sql.Int, parseInt(id_vendedor));
+      }
+      
+      if (fecha) {
+        query += " AND CONVERT(DATE, v.fecha_venta) = @fecha";
+        request.input("fecha", sql.Date, new Date(fecha));
+      }
+      
+      query += " ORDER BY v.fecha_venta DESC OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY";
+      
+      request.input("pageSize", sql.Int, pageSize);
+      request.input("offset", sql.Int, (page - 1) * pageSize);
+      
+      const ventasRequest = await request.query(query);
+
+      const totalCount = ventasRequest.recordset.length ? ventasRequest.recordset[0].total_count : 0;
 
       return NextResponse.json({
         success: true,
@@ -179,7 +237,6 @@ export async function POST(req: NextRequest) {
 
     // Validación de tipos de precio según tipo de cliente
     for (const detalle of detalles_venta) {
-      // Clientes mayoristas (incluyendo mayorista-credito)
       if (tipo_cliente.includes("mayorista")) {
         if (detalle.tipo_precio !== "mayorista") {
           return NextResponse.json(
@@ -191,22 +248,11 @@ export async function POST(req: NextRequest) {
           );
         }
       } else {
-        // Para clientes no mayoristas
         if (detalle.tipo_precio === "mayorista") {
           return NextResponse.json(
             { 
               success: false, 
               error: "Solo los clientes mayoristas pueden usar precios mayoristas" 
-            }, 
-            { status: 400 }
-          );
-        }
-
-        if (tipo_cliente.includes("credito") && detalle.tipo_precio === "medio") {
-          return NextResponse.json(
-            { 
-              success: false, 
-              error: "Los clientes de crédito no pueden usar precios medios" 
             }, 
             { status: 400 }
           );
@@ -263,13 +309,9 @@ export async function POST(req: NextRequest) {
         const product = productResult.recordset[0];
         let precioUnitario: number;
 
-        // Selección del precio según tipo de cliente (ya validado)
         if (tipo_cliente.includes("mayorista")) {
           precioUnitario = parseFloat(product.precio_mayorista);
-        } else if (tipo_cliente.includes("credito")) {
-          precioUnitario = parseFloat(product.precio_completo);
         } else {
-          // Para clientes normales
           precioUnitario = tipo_precio === "medio" 
             ? parseFloat(product.precio_medio)
             : parseFloat(product.precio_completo);
@@ -491,13 +533,6 @@ export async function PUT(req: NextRequest) {
           { status: 400 }
         );
       }
-
-      if (tipo_cliente.includes("credito") && detalle.tipo_precio === "medio") {
-        return NextResponse.json(
-          { success: false, error: "Los clientes de crédito no pueden usar precios medios" }, 
-          { status: 400 }
-        );
-      }
     }
 
     // Iniciar transacción
@@ -594,8 +629,6 @@ export async function PUT(req: NextRequest) {
 
         if (tipo_cliente.includes("mayorista")) {
           precioUnitario = parseFloat(product.precio_mayorista);
-        } else if (tipo_cliente.includes("credito")) {
-          precioUnitario = parseFloat(product.precio_completo);
         } else {
           precioUnitario = tipo_precio === "medio" 
             ? parseFloat(product.precio_medio)

@@ -7,25 +7,16 @@ function getErrorMessage(error: unknown): string {
   return typeof error === "string" ? error : "Unknown error occurred";
 }
 
-export interface Factura {
-  id_factura?: number;
-  id_venta: number;
-  id_cai: number;
-  numero_factura: string;
-  fecha_emision?: Date;
-  monto_total: number;
-  anulada?: boolean;
-}
-
 export async function GET(req: NextRequest) {
   const pool = await getConnection();
   const { searchParams } = new URL(req.url);
   const id_factura = searchParams.get('id_factura');
   const id_venta = searchParams.get('id_venta');
+  const id_personal = searchParams.get('id_personal');
 
   try {
     if (id_factura) {
-      // Obtener una factura específica por ID
+      // Obtener una factura específica por ID con detalles de productos
       const facturaRequest = await pool
         .request()
         .input("id_factura", sql.Int, id_factura)
@@ -40,11 +31,18 @@ export async function GET(req: NextRequest) {
             f.monto_total,
             f.anulada,
             v.tipo_pago,
-            cl.nombre as nombre_cliente
+            cl.nombre as nombre_cliente,
+            v.id_personal,
+            p.nombre as producto_nombre,
+            dv.cantidad,
+            p.precio_completo as precio_unitario,
+            dv.subtotal as total_producto
           FROM Factura f
           JOIN CAI c ON f.id_cai = c.id_cai
           JOIN Venta v ON f.id_venta = v.id_venta
           JOIN Clientes cl ON v.id_cliente = cl.id_cliente
+          JOIN Detalle_Venta dv ON v.id_venta = dv.id_venta
+          JOIN Producto p ON dv.id_producto = p.id_producto
           WHERE f.id_factura = @id_factura
         `);
 
@@ -55,9 +53,30 @@ export async function GET(req: NextRequest) {
         );
       }
 
+      // Agrupar productos por factura
+      const facturaData = {
+        id_factura: facturaRequest.recordset[0].id_factura,
+        id_venta: facturaRequest.recordset[0].id_venta,
+        id_cai: facturaRequest.recordset[0].id_cai,
+        codigo_cai: facturaRequest.recordset[0].codigo_cai,
+        numero_factura: facturaRequest.recordset[0].numero_factura,
+        fecha_emision: facturaRequest.recordset[0].fecha_emision,
+        monto_total: facturaRequest.recordset[0].monto_total,
+        anulada: facturaRequest.recordset[0].anulada,
+        tipo_pago: facturaRequest.recordset[0].tipo_pago,
+        nombre_cliente: facturaRequest.recordset[0].nombre_cliente,
+        id_personal: facturaRequest.recordset[0].id_personal,
+        productos: facturaRequest.recordset.map(row => ({
+          nombre: row.producto_nombre,
+          cantidad: row.cantidad,
+          precio_unitario: row.precio_unitario,
+          total: row.total_producto
+        }))
+      };
+
       return NextResponse.json({
         success: true,
-        data: facturaRequest.recordset[0]
+        data: facturaData
       });
     } else if (id_venta) {
       // Obtener facturas por venta
@@ -71,9 +90,11 @@ export async function GET(req: NextRequest) {
             f.fecha_emision,
             f.monto_total,
             f.anulada,
-            c.codigo_cai
+            c.codigo_cai,
+            v.id_personal
           FROM Factura f
           JOIN CAI c ON f.id_cai = c.id_cai
+          JOIN Venta v ON f.id_venta = v.id_venta
           WHERE f.id_venta = @id_venta
           ORDER BY f.fecha_emision DESC
         `);
@@ -83,40 +104,93 @@ export async function GET(req: NextRequest) {
         data: facturasRequest.recordset
       });
     } else {
-      // Obtener listado de facturas (con paginación)
+      // Obtener listado de facturas (con paginación y filtro por vendedor)
       const page = parseInt(searchParams.get('page') || '1');
       const pageSize = parseInt(searchParams.get('pageSize') || '10');
+      const fechaInicio = searchParams.get('fechaInicio');
+      const fechaFin = searchParams.get('fechaFin');
 
-      const facturasRequest = await pool
-        .request()
-        .input("offset", sql.Int, (page - 1) * pageSize)
-        .input("pageSize", sql.Int, pageSize)
-        .query(`
-          SELECT 
-            f.id_factura,
-            f.numero_factura,
-            f.fecha_emision,
-            f.monto_total,
-            f.anulada,
-            v.id_venta,
-            cl.nombre as nombre_cliente,
-            c.codigo_cai,
-            COUNT(*) OVER() as total_count
-          FROM Factura f
-          JOIN Venta v ON f.id_venta = v.id_venta
-          JOIN Clientes cl ON v.id_cliente = cl.id_cliente
-          JOIN CAI c ON f.id_cai = c.id_cai
-          ORDER BY f.fecha_emision DESC
-          OFFSET @offset ROWS
-          FETCH NEXT @pageSize ROWS ONLY
-        `);
+      let query = `
+        SELECT 
+          f.id_factura,
+          f.numero_factura,
+          f.fecha_emision,
+          f.monto_total,
+          f.anulada,
+          v.id_venta,
+          cl.nombre as nombre_cliente,
+          c.codigo_cai,
+          v.id_personal,
+          COUNT(*) OVER() as total_count
+        FROM Factura f
+        JOIN Venta v ON f.id_venta = v.id_venta
+        JOIN Clientes cl ON v.id_cliente = cl.id_cliente
+        JOIN CAI c ON f.id_cai = c.id_cai
+        WHERE 1=1
+      `;
+
+      const request = pool.request();
+
+      // Filtrar por vendedor (id_personal)
+      if (id_personal) {
+        query += ` AND v.id_personal = @id_personal`;
+        request.input("id_personal", sql.Int, id_personal);
+      }
+
+      // Filtrar por rango de fechas
+      if (fechaInicio && fechaFin) {
+        query += ` AND f.fecha_emision BETWEEN @fechaInicio AND @fechaFin`;
+        request.input("fechaInicio", sql.DateTime, new Date(fechaInicio));
+        request.input("fechaFin", sql.DateTime, new Date(fechaFin + 'T23:59:59'));
+      }
+
+      query += ` ORDER BY f.fecha_emision DESC
+                 OFFSET @offset ROWS
+                 FETCH NEXT @pageSize ROWS ONLY`;
+
+      request.input("offset", sql.Int, (page - 1) * pageSize);
+      request.input("pageSize", sql.Int, pageSize);
+
+      const facturasRequest = await request.query(query);
+
+      // Obtener detalles de productos para cada factura
+      const facturasConProductos = await Promise.all(
+        facturasRequest.recordset.map(async (factura) => {
+          try {
+            const productosRequest = await pool
+              .request()
+              .input("id_venta", sql.Int, factura.id_venta)
+              .query(`
+                SELECT TOP 3 
+                  p.nombre,
+                  dv.cantidad,
+                  p.precio_completo as precio_unitario,
+                  dv.subtotal as total
+                FROM Detalle_Venta dv
+                JOIN Producto p ON dv.id_producto = p.id_producto
+                WHERE dv.id_venta = @id_venta
+              `);
+
+            return {
+              ...factura,
+              productos: productosRequest.recordset
+            };
+          } catch (error) {
+            console.error("Error al cargar productos para factura:", factura.id_factura, error);
+            return {
+              ...factura,
+              productos: []
+            };
+          }
+        })
+      );
 
       const totalCount = facturasRequest.recordset[0]?.total_count || 0;
 
       return NextResponse.json({
         success: true,
         data: {
-          facturas: facturasRequest.recordset,
+          facturas: facturasConProductos,
           pagination: {
             page,
             pageSize,
@@ -250,7 +324,7 @@ export async function POST(req: NextRequest) {
         success: true,
         data: {
           id_factura: result.recordset[0].id_factura,
-          numero_factura:"",
+          numero_factura: numeroFactura,
           fecha_emision: result.recordset[0].fecha_emision,
           cai: cai.codigo_cai,
           message: "Factura generada exitosamente"

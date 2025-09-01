@@ -16,6 +16,15 @@ interface Clientes {
   activo?: boolean
 }
 
+interface ValidationResult {
+  isValid: boolean
+  error?: {
+    success: boolean
+    error: string
+    details: string
+  }
+}
+
 // Función para manejar errores
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message
@@ -46,7 +55,7 @@ function parseDateToSQLFormat(dateString: string | null | undefined): string | n
 }
 
 // Función para validar datos del cliente
-function validateClientesData(clientesData: Clientes): { isValid: boolean; error?: any } {
+function validateClientesData(clientesData: Clientes): ValidationResult {
   if (!clientesData.nombre?.trim() || !clientesData.apellido?.trim() || !clientesData.direccion?.trim()) {
     return {
       isValid: false,
@@ -86,26 +95,48 @@ function validateClientesData(clientesData: Clientes): { isValid: boolean; error
   return { isValid: true }
 }
 
-// GET - Obtener todos los clientes activos
+// GET - Obtener clientes según la ruta del vendedor
 export async function GET(req: NextRequest) {
   let pool
   try {
+    const { searchParams } = new URL(req.url);
+    const idRuta = searchParams.get('id_ruta');
+    const idPersonal = searchParams.get('id_personal'); // Nuevo parámetro para el vendedor logeado
+    
     pool = await getConnection()
 
-    // Usamos CONVERT para formatear la fecha directamente en SQL Server
-    const result = await pool.request().query(`
+    let query = `
       SELECT 
-        id_cliente, nombre, apellido, telefono, direccion, email, 
-        fecha_registro, id_ruta, dia_visita, activo, tipo_cliente,
+        c.id_cliente, c.nombre, c.apellido, c.telefono, c.direccion, c.email, 
+        c.fecha_registro, c.id_ruta, c.dia_visita, c.activo, c.tipo_cliente,
         CASE 
-          WHEN ultima_visita IS NOT NULL 
-          THEN FORMAT(ultima_visita, 'dd/MM/yyyy') 
+          WHEN c.ultima_visita IS NOT NULL 
+          THEN FORMAT(c.ultima_visita, 'dd/MM/yyyy') 
           ELSE NULL 
-        END as ultima_visita
-      FROM Clientes 
-      WHERE activo = 1 
-      ORDER BY id_cliente DESC
-    `)
+        END as ultima_visita,
+        r.nombre as nombre_ruta
+      FROM Clientes c
+      LEFT JOIN Ruta r ON c.id_ruta = r.id_ruta
+      WHERE c.activo = 1 
+    `;
+    
+    const request = pool.request();
+    
+    // Filtrar por ruta si se proporciona el parámetro
+    if (idRuta) {
+      query += ` AND c.id_ruta = @id_ruta `;
+      request.input('id_ruta', sql.Int, parseInt(idRuta));
+    }
+    
+    // Filtrar por vendedor (personal) si se proporciona el parámetro
+    if (idPersonal) {
+      query += ` AND r.id_personal_asignado = @id_personal `;
+      request.input('id_personal', sql.Int, parseInt(idPersonal));
+    }
+    
+    query += ` ORDER BY c.nombre, c.apellido ASC `;
+
+    const result = await request.query(query);
 
     return NextResponse.json(
       {
