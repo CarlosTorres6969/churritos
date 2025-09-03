@@ -131,6 +131,7 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
   const [filtroDiaVisita, setFiltroDiaVisita] = useState<string>("todos")
   const [rutaUsuario, setRutaUsuario] = useState<Ruta | null>(null)
   const [usuarioAutenticado, setUsuarioAutenticado] = useState<UsuarioAutenticado | null>(null)
+  const [isInitialLoad, setIsInitialLoad] = useState(true)
   const router = useRouter()
 
   const fetchClientAndPrices = useCallback(
@@ -272,7 +273,9 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
             }
           })
 
-          setProductosDisponibles(productosData)
+          // Ordenar productos por ID
+          const productosOrdenados = productosData.sort((a, b) => a.id_producto - b.id_producto)
+          setProductosDisponibles(productosOrdenados)
         } else {
           setError("Error al cargar inventario de la ruta")
         }
@@ -300,13 +303,7 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
     }
 
     obtenerUsuario()
-
-    // Usar resolvedSearchParams en lugar de searchParams
-    const clientId = resolvedSearchParams?.clientId as string | undefined
-    if (clientId && !clienteSeleccionado) {
-      fetchClientAndPrices(clientId)
-    }
-  }, [resolvedSearchParams, clienteSeleccionado, router, fetchClientAndPrices])
+  }, [router])
 
   useEffect(() => {
     if (rutaUsuario) {
@@ -317,16 +314,30 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
 
   useEffect(() => {
     if (rutaUsuario) {
-      const productosFiltrados = productosDisponibles.filter((producto) => producto.id_ruta === rutaUsuario.id_ruta)
+      const productosFiltrados = productosDisponibles
+        .filter((producto) => producto.id_ruta === rutaUsuario.id_ruta)
+        .sort((a, b) => a.id_producto - b.id_producto) // Ordenar por ID
       setProductosFiltrados(productosFiltrados)
     } else {
-      setProductosFiltrados(productosDisponibles)
+      const productosOrdenados = productosDisponibles.sort((a, b) => a.id_producto - b.id_producto) // Ordenar por ID
+      setProductosFiltrados(productosOrdenados)
     }
   }, [productosDisponibles, rutaUsuario])
 
   useEffect(() => {
     filtrarClientesPorDia()
   }, [filtrarClientesPorDia])
+
+  useEffect(() => {
+    // Solo ejecutar una vez después de la carga inicial
+    if (isInitialLoad && resolvedSearchParams && usuarioAutenticado) {
+      const clientId = resolvedSearchParams?.clientId as string | undefined
+      if (clientId && !clienteSeleccionado) {
+        fetchClientAndPrices(clientId)
+      }
+      setIsInitialLoad(false)
+    }
+  }, [resolvedSearchParams, clienteSeleccionado, fetchClientAndPrices, isInitialLoad, usuarioAutenticado])
 
   const fetchRutaUsuario = async (idPersonal: number) => {
     try {
