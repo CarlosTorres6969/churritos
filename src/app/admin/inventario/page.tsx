@@ -286,58 +286,60 @@ export default function InventarioPorRutaPage() {
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {inventariosRuta.map((inventario) => {
-                    const stockInfo = obtenerEstadoStock(inventario.cantidad)
-                    return (
-                      <Card key={inventario.id_inventario_ruta} className="hover:shadow-md transition-shadow">
-                        <CardContent className="p-4">
-                          <div className="flex items-start justify-between mb-3">
-                            <div>
-                              <h4 className="font-medium">{inventario.producto_nombre}</h4>
-                              <p className="text-sm text-gray-600">{inventario.producto_codigo}</p>
+                  {inventariosRuta
+                    .sort((a, b) => a.id_producto - b.id_producto) // Ordenar por ID en lugar de nombre
+                    .map((inventario) => {
+                      const stockInfo = obtenerEstadoStock(inventario.cantidad)
+                      return (
+                        <Card key={inventario.id_inventario_ruta} className="hover:shadow-md transition-shadow">
+                          <CardContent className="p-4">
+                            <div className="flex items-start justify-between mb-3">
+                              <div>
+                                <h4 className="font-medium">{inventario.producto_nombre}</h4>
+                                <p className="text-sm text-gray-600">ID: {inventario.id_producto} - {inventario.producto_codigo}</p>
+                              </div>
+                              <Badge variant={stockInfo.color as "default" | "destructive" | "outline" | "secondary" | null | undefined}>
+                                {inventario.cantidad}
+                              </Badge>
                             </div>
-                            <Badge variant={stockInfo.color as "default" | "destructive" | "outline" | "secondary" | null | undefined}>
-                              {inventario.cantidad}
-                            </Badge>
-                          </div>
 
-                          <div className="space-y-2 text-sm text-gray-600">
-                            <div className="flex items-center gap-2">
-                              {stockInfo.estado === "agotado" && <AlertTriangle className="h-4 w-4 text-red-500" />}
-                              {stockInfo.estado === "bajo" && <AlertTriangle className="h-4 w-4 text-yellow-500" />}
-                              <span>
-                                Estado: {stockInfo.estado === "agotado" && "Agotado"}
-                                {stockInfo.estado === "bajo" && "Stock Bajo"}
-                                {stockInfo.estado === "medio" && "Stock Medio"}
-                                {stockInfo.estado === "alto" && "Stock Alto"}
-                              </span>
+                            <div className="space-y-2 text-sm text-gray-600">
+                              <div className="flex items-center gap-2">
+                                {stockInfo.estado === "agotado" && <AlertTriangle className="h-4 w-4 text-red-500" />}
+                                {stockInfo.estado === "bajo" && <AlertTriangle className="h-4 w-4 text-yellow-500" />}
+                                <span>
+                                  Estado: {stockInfo.estado === "agotado" && "Agotado"}
+                                  {stockInfo.estado === "bajo" && "Stock Bajo"}
+                                  {stockInfo.estado === "medio" && "Stock Medio"}
+                                  {stockInfo.estado === "alto" && "Stock Alto"}
+                                </span>
+                              </div>
+                              <p>Actualizado: {new Date(inventario.fecha_actualizacion).toLocaleDateString("es-HN")}</p>
                             </div>
-                            <p>Actualizado: {new Date(inventario.fecha_actualizacion).toLocaleDateString("es-HN")}</p>
-                          </div>
 
-                          <div className="flex gap-2 mt-3">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => abrirModal(inventario)}
-                              className="flex-1"
-                            >
-                              <Edit className="h-4 w-4 mr-2" />
-                              Editar
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => eliminarInventario(inventario.id_inventario_ruta)}
-                              className="flex-1"
-                            >
-                              Eliminar
-                            </Button>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    )
-                  })}
+                            <div className="flex gap-2 mt-3">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => abrirModal(inventario)}
+                                className="flex-1"
+                              >
+                                <Edit className="h-4 w-4 mr-2" />
+                                Editar
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => eliminarInventario(inventario.id_inventario_ruta)}
+                                className="flex-1"
+                              >
+                                Eliminar
+                              </Button>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      )
+                    })}
                 </div>
               </CardContent>
             </Card>
@@ -404,11 +406,13 @@ export default function InventarioPorRutaPage() {
                         <SelectValue placeholder="Seleccionar producto" />
                       </SelectTrigger>
                       <SelectContent>
-                        {productos.map((producto) => (
-                          <SelectItem key={producto.id_producto} value={producto.id_producto.toString()}>
-                            {producto.nombre} ({producto.codigo})
-                          </SelectItem>
-                        ))}
+                        {productos
+                          .sort((a, b) => a.id_producto - b.id_producto) // Ordenar por ID en lugar de nombre
+                          .map((producto) => (
+                            <SelectItem key={producto.id_producto} value={producto.id_producto.toString()}>
+                              ID: {producto.id_producto} - {producto.nombre} ({producto.codigo})
+                            </SelectItem>
+                          ))}
                       </SelectContent>
                     </Select>
                   </div>

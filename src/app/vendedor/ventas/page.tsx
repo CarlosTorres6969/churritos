@@ -601,14 +601,14 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between py-4">
-            <div className="flex items-center space-x-4">
-              <Button variant="ghost" onClick={() => router.push("/vendedor")}>
-                <ArrowLeft className="h-4 w-4 mr-2" />
-                Volver
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between py-4 gap-4">
+            <div className="flex items-center space-x-4 w-full sm:w-auto">
+              <Button variant="ghost" onClick={() => router.push("/vendedor")} className="p-2 sm:p-0">
+                <ArrowLeft className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Volver</span>
               </Button>
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">Realizar Venta</h1>
+              <div className="flex-1 sm:flex-none">
+                <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Realizar Venta</h1>
                 <p className="text-sm text-gray-600">Procesa una nueva venta</p>
                 <div className="flex items-center mt-1 text-xs text-blue-600">
                   <MapPin className="h-3 w-3 mr-1" />
@@ -619,17 +619,17 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
                 </div>
               </div>
             </div>
-            <div className="flex items-center space-x-4">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center space-y-2 sm:space-y-0 sm:space-x-4 w-full sm:w-auto">
               <div className="text-sm text-gray-600">
                 Vendedor: {usuarioAutenticado.nombre} {usuarioAutenticado.apellido} (ID:{" "}
                 {usuarioAutenticado.id_personal})
               </div>
               <div className="flex space-x-2">
-                <Button onClick={fetchClientes} variant="outline" disabled={cargandoClientes}>
+                <Button onClick={fetchClientes} variant="outline" disabled={cargandoClientes} size="sm">
                   {cargandoClientes ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
                   Actualizar Clientes
                 </Button>
-                <Button onClick={fetchProductos} variant="outline" disabled={cargandoProductos}>
+                <Button onClick={fetchProductos} variant="outline" disabled={cargandoProductos} size="sm">
                   {cargandoProductos ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
                   Actualizar Productos
                 </Button>
@@ -647,78 +647,8 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Package className="h-5 w-5" />
-                  Productos Disponibles en tu Ruta
-                  {cargandoProductos && <Loader2 className="h-4 w-4 animate-spin" />}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {cargandoProductos ? (
-                  <div className="flex justify-center items-center py-8">
-                    <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
-                    <span className="ml-2">Cargando productos...</span>
-                  </div>
-                ) : productosFiltrados.length === 0 ? (
-                  <div className="text-center py-8">
-                    <p className="text-gray-500 mb-4">No hay productos disponibles para tu ruta</p>
-                    <Button onClick={fetchProductos}>Reintentar carga</Button>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {productosFiltrados.map((producto) => (
-                      <Card key={producto.id_producto} className="hover:shadow-md transition-shadow">
-                        <CardContent className="p-4">
-                          <div className="flex justify-between items-start mb-2">
-                            <div>
-                              <h4 className="font-medium">{producto.nombre}</h4>
-                              <p className="text-sm text-gray-600">Código: {producto.codigo}</p>
-                              <p className="text-sm text-gray-600">Stock: {producto.stock}</p>
-                            </div>
-                            <Button
-                              size="sm"
-                              onClick={() => agregarProducto(producto)}
-                              disabled={!clienteSeleccionado || producto.stock <= 0}
-                              title={
-                                !clienteSeleccionado
-                                  ? "Seleccione un cliente primero"
-                                  : producto.stock <= 0
-                                    ? "Sin stock disponible"
-                                    : "Agregar al carrito"
-                              }
-                            >
-                              <Plus className="h-4 w-4" />
-                            </Button>
-                          </div>
-                          <div className="space-y-1 text-sm">
-                            {availablePrices.includes("completo") && producto.precio_completo > 0 && (
-                              <div>Completo: L. {producto.precio_completo.toFixed(2)}</div>
-                            )}
-                            {availablePrices.includes("medio") && producto.precio_medio > 0 && (
-                              <div>Medio: L. {producto.precio_medio.toFixed(2)}</div>
-                            )}
-                            {availablePrices.includes("mayorista") && producto.precio_mayorista > 0 && (
-                              <div>Mayorista: L. {producto.precio_mayorista.toFixed(2)}</div>
-                            )}
-                            {producto.precio_completo === 0 &&
-                              producto.precio_medio === 0 &&
-                              producto.precio_mayorista === 0 && (
-                                <div className="text-red-500">Precios no disponibles</div>
-                              )}
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          <div className="space-y-6">
+          {/* Columna izquierda: Cliente y Carrito (ahora aparece primero) */}
+          <div className="lg:col-span-1 space-y-6">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -984,6 +914,78 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
                       </Button>
                     </div>
                   </>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Columna derecha: Productos (ahora aparece después) */}
+          <div className="lg:col-span-2">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Package className="h-5 w-5" />
+                  Productos Disponibles en tu Ruta
+                  {cargandoProductos && <Loader2 className="h-4 w-4 animate-spin" />}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {cargandoProductos ? (
+                  <div className="flex justify-center items-center py-8">
+                    <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+                    <span className="ml-2">Cargando productos...</span>
+                  </div>
+                ) : productosFiltrados.length === 0 ? (
+                  <div className="text-center py-8">
+                    <p className="text-gray-500 mb-4">No hay productos disponibles para tu ruta</p>
+                    <Button onClick={fetchProductos}>Reintentar carga</Button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {productosFiltrados.map((producto) => (
+                      <Card key={producto.id_producto} className="hover:shadow-md transition-shadow">
+                        <CardContent className="p-4">
+                          <div className="flex justify-between items-start mb-2">
+                            <div>
+                              <h4 className="font-medium">{producto.nombre}</h4>
+                              <p className="text-sm text-gray-600">Código: {producto.codigo}</p>
+                              <p className="text-sm text-gray-600">Stock: {producto.stock}</p>
+                            </div>
+                            <Button
+                              size="sm"
+                              onClick={() => agregarProducto(producto)}
+                              disabled={!clienteSeleccionado || producto.stock <= 0}
+                              title={
+                                !clienteSeleccionado
+                                  ? "Seleccione un cliente primero"
+                                  : producto.stock <= 0
+                                    ? "Sin stock disponible"
+                                    : "Agregar al carrito"
+                              }
+                            >
+                              <Plus className="h-4 w-4" />
+                            </Button>
+                          </div>
+                          <div className="space-y-1 text-sm">
+                            {availablePrices.includes("completo") && producto.precio_completo > 0 && (
+                              <div>Completo: L. {producto.precio_completo.toFixed(2)}</div>
+                            )}
+                            {availablePrices.includes("medio") && producto.precio_medio > 0 && (
+                              <div>Medio: L. {producto.precio_medio.toFixed(2)}</div>
+                            )}
+                            {availablePrices.includes("mayorista") && producto.precio_mayorista > 0 && (
+                              <div>Mayorista: L. {producto.precio_mayorista.toFixed(2)}</div>
+                            )}
+                            {producto.precio_completo === 0 &&
+                              producto.precio_medio === 0 &&
+                              producto.precio_mayorista === 0 && (
+                                <div className="text-red-500">Precios no disponibles</div>
+                              )}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
                 )}
               </CardContent>
             </Card>

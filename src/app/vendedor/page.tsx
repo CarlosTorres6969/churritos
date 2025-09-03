@@ -217,19 +217,19 @@ export default function VendedorDashboard() {
       {/* Header */}
       <header className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-4">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">Panel del Vendedor</h1>
+          <div className="flex flex-col sm:flex-row justify-between items-center py-4 gap-4">
+            <div className="text-center sm:text-left">
+              <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Panel del Vendedor</h1>
               <p className="text-sm text-gray-600">
                 Bienvenido, {user?.nombre} {user?.apellido}
               </p>
             </div>
-            <div className="flex items-center space-x-4">
+            <div className="flex flex-col sm:flex-row items-center space-y-2 sm:space-y-0 sm:space-x-4">
               <Badge variant="secondary" className="flex items-center gap-1">
                 <BarChart3 className="h-3 w-3" />
                 Datos Históricos
               </Badge>
-              <Button variant="outline" onClick={handleLogout}>
+              <Button variant="outline" onClick={handleLogout} className="w-full sm:w-auto">
                 <LogOut className="h-4 w-4 mr-2" />
                 Cerrar Sesión
               </Button>
@@ -240,14 +240,14 @@ export default function VendedorDashboard() {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Estadísticas generales */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-          <Card>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-6 sm:mb-8">
+          <Card className="w-full">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Ventas</CardTitle>
               <ShoppingCart className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{stats.totalVentas}</div>
+              <div className="text-xl sm:text-2xl font-bold">{stats.totalVentas}</div>
               <p className="text-xs text-muted-foreground">
                 <TrendingUp className="inline h-3 w-3 mr-1" />
                 Todas las transacciones realizadas
@@ -255,49 +255,49 @@ export default function VendedorDashboard() {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="w-full">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Clientes Atendidos</CardTitle>
               <Users className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{stats.totalClientesAtendidos}</div>
+              <div className="text-xl sm:text-2xl font-bold">{stats.totalClientesAtendidos}</div>
               <p className="text-xs text-muted-foreground">Total de clientes únicos atendidos</p>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="w-full">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Monto Total</CardTitle>
               <DollarSign className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">L. {stats.montoTotal.toFixed(2)}</div>
+              <div className="text-xl sm:text-2xl font-bold">L. {stats.montoTotal.toFixed(2)}</div>
               <p className="text-xs text-muted-foreground">Ingresos totales históricos</p>
             </CardContent>
           </Card>
         </div>
 
         {/* Menú de opciones */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
           {menuItems.map((item, index) => (
             <Card
               key={index}
-              className="hover:shadow-lg transition-all duration-200 cursor-pointer hover:scale-105"
+              className="w-full hover:shadow-lg transition-all duration-200 cursor-pointer hover:scale-105"
               onClick={() => router.push(item.href)}
             >
-              <CardHeader>
+              <CardHeader className="p-4 sm:p-6">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-3">
                     <div className={`p-2 rounded-lg ${item.color}`}>
-                      <item.icon className="h-6 w-6 text-white" />
+                      <item.icon className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
                     </div>
-                    <div>
-                      <CardTitle className="text-lg">{item.title}</CardTitle>
-                      <CardDescription className="text-sm">{item.description}</CardDescription>
+                    <div className="flex-1 min-w-0">
+                      <CardTitle className="text-base sm:text-lg truncate">{item.title}</CardTitle>
+                      <CardDescription className="text-xs sm:text-sm truncate">{item.description}</CardDescription>
                     </div>
                   </div>
-                  <Badge variant="outline" className="ml-2">
+                  <Badge variant="outline" className="ml-2 shrink-0">
                     {item.stats}
                   </Badge>
                 </div>
@@ -307,40 +307,40 @@ export default function VendedorDashboard() {
         </div>
 
         {/* Accesos rápidos */}
-        <div className="mt-8 bg-white rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold mb-4">Accesos Rápidos</h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="mt-6 sm:mt-8 bg-white rounded-lg shadow p-4 sm:p-6">
+          <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">Accesos Rápidos</h3>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4">
             <Button
               variant="outline"
-              className="h-16 flex-col bg-transparent"
+              className="h-12 sm:h-16 flex-col bg-transparent p-1 sm:p-2"
               onClick={() => router.push("/vendedor/ventas")}
             >
-              <ShoppingCart className="h-6 w-6 mb-1" />
-              Nueva Venta
+              <ShoppingCart className="h-4 w-4 sm:h-6 sm:w-6 mb-1" />
+              <span className="text-xs sm:text-sm">Nueva Venta</span>
             </Button>
             <Button
               variant="outline"
-              className="h-16 flex-col bg-transparent"
+              className="h-12 sm:h-16 flex-col bg-transparent p-1 sm:p-2"
               onClick={() => router.push("/vendedor/clientes")}
             >
-              <Users className="h-6 w-6 mb-1" />
-              Ver Clientes
+              <Users className="h-4 w-4 sm:h-6 sm:w-6 mb-1" />
+              <span className="text-xs sm:text-sm">Ver Clientes</span>
             </Button>
             <Button
               variant="outline"
-              className="h-16 flex-col bg-transparent"
+              className="h-12 sm:h-16 flex-col bg-transparent p-1 sm:p-2"
               onClick={() => router.push("/vendedor/inventario")}
             >
-              <Package className="h-6 w-6 mb-1" />
-              Inventario
+              <Package className="h-4 w-4 sm:h-6 sm:w-6 mb-1" />
+              <span className="text-xs sm:text-sm">Inventario</span>
             </Button>
             <Button
               variant="outline"
-              className="h-16 flex-col bg-transparent"
+              className="h-12 sm:h-16 flex-col bg-transparent p-1 sm:p-2"
               onClick={() => router.push("/vendedor/cierre")}
             >
-              <BarChart3 className="h-6 w-6 mb-1" />
-              Cerrar Día
+              <BarChart3 className="h-4 w-4 sm:h-6 sm:w-6 mb-1" />
+              <span className="text-xs sm:text-sm">Cerrar Día</span>
             </Button>
           </div>
         </div>

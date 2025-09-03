@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
@@ -112,10 +111,11 @@ export default function InventarioVendedor() {
   }, [router, obtenerRutaUsuario])
 
   const filtrarProductos = useCallback(() => {
+    const productosOrdenados = [...productos].sort((a, b) => a.id_producto - b.id_producto);
     if (!busqueda) {
-      setProductosFiltrados(productos)
+      setProductosFiltrados(productosOrdenados)
     } else {
-      const filtrados = productos.filter(
+      const filtrados = productosOrdenados.filter(
         (producto) =>
           producto.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
           producto.codigo.toLowerCase().includes(busqueda.toLowerCase()),
