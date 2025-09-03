@@ -31,6 +31,7 @@ export async function GET(req: NextRequest) {
   const id_cliente = searchParams.get('id_cliente');
   const page = parseInt(searchParams.get('page') || '1');
   const pageSize = parseInt(searchParams.get('pageSize') || '10');
+  const sin_limite = searchParams.get('sin_limite') === 'true'; // Nuevo parámetro
 
   try {
     if (id_venta) {
@@ -163,10 +164,14 @@ export async function GET(req: NextRequest) {
         request.input("fecha", sql.Date, new Date(fecha));
       }
       
-      query += " ORDER BY v.fecha_venta DESC OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY";
+      query += " ORDER BY v.fecha_venta DESC";
       
-      request.input("pageSize", sql.Int, pageSize);
-      request.input("offset", sql.Int, (page - 1) * pageSize);
+      // Solo aplicar paginación si no se solicita sin límite
+      if (!sin_limite) {
+        query += " OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY";
+        request.input("pageSize", sql.Int, pageSize);
+        request.input("offset", sql.Int, (page - 1) * pageSize);
+      }
       
       const ventasRequest = await request.query(query);
 
@@ -176,7 +181,7 @@ export async function GET(req: NextRequest) {
         success: true,
         data: {
           ventas: ventasRequest.recordset,
-          pagination: {
+          pagination: sin_limite ? null : {
             page,
             pageSize,
             total: totalCount,

@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { ArrowLeft, FileText, Eye, Printer, Download, Calendar, X } from "lucide-react"
+import { ArrowLeft, FileText, Eye, Printer, Download, Calendar, X, Search } from "lucide-react"
 import { requireAuth } from "@/lib/auth"
 
 interface Factura {
@@ -51,6 +51,7 @@ interface UsuarioAutenticado {
 
 export default function FacturasVendedor() {
   const [facturas, setFacturas] = useState<Factura[]>([])
+  const [facturasFiltradas, setFacturasFiltradas] = useState<Factura[]>([])
   const [facturaSeleccionada, setFacturaSeleccionada] = useState<FacturaDetalle | null>(null)
   const [modalAbierto, setModalAbierto] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -61,6 +62,7 @@ export default function FacturasVendedor() {
   const [fechaFin, setFechaFin] = useState("")
   const [filtroActivo, setFiltroActivo] = useState(false)
   const [usuarioAutenticado, setUsuarioAutenticado] = useState<UsuarioAutenticado | null>(null)
+  const [terminoBusqueda, setTerminoBusqueda] = useState("")
   const router = useRouter()
 
   const cargarFacturas = useCallback(async (idPersonal: number) => {
@@ -77,6 +79,7 @@ export default function FacturasVendedor() {
 
       if (result.success) {
         setFacturas(result.data.facturas || [])
+        setFacturasFiltradas(result.data.facturas || [])
         setTotalPages(result.data.pagination?.totalPages || 1)
         setError("")
       } else {
@@ -107,6 +110,20 @@ export default function FacturasVendedor() {
     obtenerUsuario();
   }, [cargarFacturas, router])
 
+  // Filtrar facturas según término de búsqueda
+  useEffect(() => {
+    if (terminoBusqueda) {
+      const termino = terminoBusqueda.toLowerCase();
+      const filtradas = facturas.filter(factura => 
+        factura.numero_factura.toLowerCase().includes(termino) ||
+        factura.nombre_cliente.toLowerCase().includes(termino)
+      );
+      setFacturasFiltradas(filtradas);
+    } else {
+      setFacturasFiltradas(facturas);
+    }
+  }, [terminoBusqueda, facturas])
+
   const verFactura = async (factura: Factura) => {
     try {
       const response = await fetch(`/API/Factura?id_factura=${factura.id_factura}`)
@@ -116,7 +133,7 @@ export default function FacturasVendedor() {
         setFacturaSeleccionada(result.data)
         setModalAbierto(true)
       } else {
-        setError("Error al cargar detalles de la factura")
+        setError("Error al cargar detalles de the factura")
       }
     } catch (error) {
       setError("Error de conexión al cargar factura")
@@ -133,28 +150,28 @@ export default function FacturasVendedor() {
 
     const productosHTML = factura.productos && factura.productos.length > 0
       ? `
-        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 10px; font-size: 9px;">
           <thead>
             <tr style="border-bottom: 1px solid #000;">
-              <th style="text-align: left; padding: 8px;">Producto</th>
-              <th style="text-align: right; padding: 8px;">Cantidad</th>
-              <th style="text-align: right; padding: 8px;">Precio Unitario</th>
-              <th style="text-align: right; padding: 8px;">Total</th>
+              <th style="text-align: left; padding: 4px;">Producto</th>
+              <th style="text-align: right; padding: 4px;">Cantidad</th>
+              <th style="text-align: right; padding: 4px;">P. Unitario</th>
+              <th style="text-align: right; padding: 4px;">Total</th>
             </tr>
           </thead>
           <tbody>
             ${factura.productos.map(p => `
               <tr>
-                <td style="padding: 8px;">${p.nombre}</td>
-                <td style="text-align: right; padding: 8px;">${p.cantidad}</td>
-                <td style="text-align: right; padding: 8px;">L. ${p.precio_unitario.toFixed(2)}</td>
-                <td style="text-align: right; padding: 8px;">L. ${p.total.toFixed(2)}</td>
+                <td style="padding: 4px;">${p.nombre}</td>
+                <td style="text-align: right; padding: 4px;">${p.cantidad}</td>
+                <td style="text-align: right; padding: 4px;">L. ${p.precio_unitario.toFixed(2)}</td>
+                <td style="text-align: right; padding: 4px;">L. ${p.total.toFixed(2)}</td>
               </tr>
             `).join('')}
           </tbody>
         </table>
       `
-      : '<p>No hay productos disponibles para esta factura.</p>';
+      : '<p style="font-size: 9px;">No hay productos disponibles para esta factura.</p>';
 
     const printContent = `
       <!DOCTYPE html>
@@ -162,42 +179,58 @@ export default function FacturasVendedor() {
         <head>
           <title>Factura ${factura.numero_factura}</title>
           <style>
+            @page {
+              size: 74mm 105mm;
+              margin: 5mm;
+            }
             body { 
               font-family: Arial, sans-serif; 
-              margin: 20px; 
-              font-size: 12px;
+              margin: 0;
+              padding: 0;
+              font-size: 10px;
+              width: 64mm;
             }
             .header { 
               text-align: center; 
-              border-bottom: 2px solid #000; 
-              padding-bottom: 10px; 
-              margin-bottom: 20px;
+              border-bottom: 1px solid #000; 
+              padding-bottom: 5px; 
+              margin-bottom: 10px;
             }
             .company-name {
-              font-size: 18px;
+              font-size: 12px;
               font-weight: bold;
-              margin-bottom: 10px;
+              margin-bottom: 5px;
             }
             .invoice-info { 
               display: flex; 
               justify-content: space-between; 
-              margin-bottom: 20px;
+              margin-bottom: 10px;
+              font-size: 9px;
             }
             .invoice-details { 
               border: 1px solid #000; 
-              padding: 15px; 
-              margin-bottom: 20px;
+              padding: 8px; 
+              margin-bottom: 10px;
+              font-size: 9px;
             }
             .total { 
               text-align: right; 
-              font-size: 16px; 
+              font-size: 11px; 
               font-weight: bold; 
-              margin-top: 20px;
+              margin-top: 10px;
             }
             .footer {
-              margin-top: 30px;
+              margin-top: 15px;
               text-align: center;
-              font-size: 10px;
+              font-size: 8px;
+            }
+            h1 {
+              font-size: 14px;
+              margin: 5px 0;
+            }
+            h2 {
+              font-size: 12px;
+              margin: 3px 0;
             }
             @media print {
               body { margin: 0; }
@@ -235,7 +268,7 @@ export default function FacturasVendedor() {
           </div>
 
           <div class="footer">
-            <p>Factura generada el ${new Date().toLocaleString("es-HN")}</p>
+            <p>Factura generada el ${formatearFecha(new Date().toISOString())}</p>
           </div>
         </body>
       </html>
@@ -252,18 +285,51 @@ export default function FacturasVendedor() {
     alert(`Funcionalidad de descarga en desarrollo para factura ${factura.numero_factura}`)
   }
 
-  const formatearFecha = (fecha: string) => {
-    return new Date(fecha).toLocaleString("es-HN", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    })
+  const formatearFecha = (fechaString: string) => {
+    try {
+      // Extraer directamente los componentes de fecha y hora de la cadena
+      // Formato esperado: YYYY-MM-DD HH:MM:SS o YYYY-MM-DDTHH:MM:SS
+      let anio, mes, dia, horas, minutos;
+      
+      if (fechaString.includes('T')) {
+        // Formato ISO (YYYY-MM-DDTHH:MM:SS.ZZZ)
+        const [fechaPart, tiempoPart] = fechaString.split('T');
+        [anio, mes, dia] = fechaPart.split('-');
+        
+        // Extraer solo horas y minutos, ignorando segundos y milisegundos
+        const tiempoSinMilisegundos = tiempoPart.split('.')[0];
+        [horas, minutos] = tiempoSinMilisegundos.split(':');
+      } else {
+        // Formato estándar (YYYY-MM-DD HH:MM:SS)
+        const [fechaPart, tiempoPart] = fechaString.split(' ');
+        [anio, mes, dia] = fechaPart.split('-');
+        
+        // Extraer solo horas y minutos, ignorando segundos
+        [horas, minutos] = tiempoPart.split(':');
+      }
+      
+      // Usar los valores directamente sin conversión de zona horaria
+      return `${dia.padStart(2, '0')}/${mes.padStart(2, '0')}/${anio} ${horas.padStart(2, '0')}:${minutos.padStart(2, '0')}`;
+    } catch (error) {
+      console.error("Error al formatear fecha:", error, fechaString);
+      // Fallback: intentar con el método estándar
+      try {
+        const fecha = new Date(fechaString);
+        return fecha.toLocaleString("es-HN", {
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit"
+        });
+      } catch (e) {
+        return "Fecha inválida";
+      }
+    }
   }
 
-  const totalFacturado = facturas.reduce((sum, f) => sum + f.monto_total, 0)
-  const facturasActivas = facturas.filter((f) => !f.anulada).length
+  const totalFacturado = facturasFiltradas.reduce((sum, f) => sum + f.monto_total, 0)
+  const facturasActivas = facturasFiltradas.filter((f) => !f.anulada).length
 
   const aplicarFiltroFecha = () => {
     if (!fechaInicio || !fechaFin) {
@@ -286,6 +352,7 @@ export default function FacturasVendedor() {
     setFechaFin("")
     setFiltroActivo(false)
     setCurrentPage(1)
+    setTerminoBusqueda("")
   }
 
   if (loading) {
@@ -324,6 +391,28 @@ export default function FacturasVendedor() {
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
+
+        {/* Buscador */}
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Search className="h-5 w-5" />
+              Buscar Facturas
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+              <Input
+                type="text"
+                placeholder="Buscar por número de factura o nombre de cliente..."
+                value={terminoBusqueda}
+                onChange={(e) => setTerminoBusqueda(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+          </CardContent>
+        </Card>
 
         <Card className="mb-6">
           <CardHeader>
@@ -413,7 +502,7 @@ export default function FacturasVendedor() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {facturas.map((factura) => (
+              {facturasFiltradas.map((factura) => (
                 <div key={factura.id_factura} className="flex items-center justify-between p-4 border rounded-lg">
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-2">
@@ -464,13 +553,13 @@ export default function FacturasVendedor() {
               ))}
             </div>
 
-            {facturas.length === 0 && !loading && (
+            {facturasFiltradas.length === 0 && !loading && (
               <div className="text-center py-8">
                 <FileText className="h-12 w-12 mx-auto text-gray-400 mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">No hay facturas</h3>
                 <p className="text-gray-600">
-                  {filtroActivo
-                    ? "No se encontraron facturas en el rango de fechas seleccionado"
+                  {filtroActivo || terminoBusqueda
+                    ? "No se encontraron facturas con los filtros aplicados"
                     : "No has generado ninguna factura aún"}
                 </p>
               </div>
@@ -573,7 +662,7 @@ export default function FacturasVendedor() {
                         </tfoot>
                       </table>
                     </div>
-                  </div>
+                    </div>
                 )}
 
                 <div className="flex gap-2 pt-4">

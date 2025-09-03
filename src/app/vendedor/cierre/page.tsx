@@ -18,6 +18,8 @@ import {
   Calendar,
   Package,
   Loader2,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react"
 import { format } from "date-fns"
 import { getLoggedUser, requireAuth } from "@/lib/auth"
@@ -56,6 +58,9 @@ interface VentaAPI {
   total_productos: number
 }
 
+// Número de ventas por página
+const VENTAS_POR_PAGINA = 10;
+
 export default function CierreDia() {
   const [resumen, setResumen] = useState<ResumenDia | null>(null)
   const [loading, setLoading] = useState(true)
@@ -63,12 +68,14 @@ export default function CierreDia() {
   const [error, setError] = useState("")
   const [cierreProcesado, setCierreProcesado] = useState(false)
   const [fecha, setFecha] = useState<string>(format(new Date(), "yyyy-MM-dd"))
+  const [paginaActual, setPaginaActual] = useState(1)
   const router = useRouter()
 
   const cargarResumenDia = useCallback(async () => {
     try {
       setLoading(true)
       setError("")
+      setPaginaActual(1) // Resetear a la primera página
 
       const loggedUser = getLoggedUser()
       const idVendedor = loggedUser?.id_personal
@@ -80,6 +87,7 @@ export default function CierreDia() {
         throw new Error("No se pudo identificar al vendedor. Por favor, inicie sesión nuevamente.")
       }
 
+      // Verificar si ya se procesó el cierre para esta fecha
       const cierreUrl = `/API/Cierre-dia?fecha=${fecha}&id_vendedor=${idVendedor}`
 
       const cierreResponse = await fetch(cierreUrl)
@@ -90,7 +98,8 @@ export default function CierreDia() {
         }
       }
 
-      const response = await fetch(`/API/Ventas?fecha=${fecha}`)
+      // Obtener TODAS las ventas sin límite
+      const response = await fetch(`/API/Ventas?fecha=${fecha}&id_vendedor=${idVendedor}&sin_limite=true`)
 
       if (!response.ok) {
         const errorText = await response.text()
@@ -110,12 +119,14 @@ export default function CierreDia() {
       console.log("[DEBUG] Total ventas recibidas de la API:", data.data.ventas.length)
       console.log("[DEBUG] Primeras 3 ventas:", data.data.ventas.slice(0, 3))
 
+      // Filtrar ventas por vendedor (ya deberían estar filtradas por la API)
       const ventasDelVendedor = data.data.ventas.filter((v: VentaAPI) => {
         return v.id_personal === idVendedor
       })
 
       console.log("[DEBUG] Ventas del vendedor después de filtrar:", ventasDelVendedor.length)
 
+      // Asegurar que todas las ventas son del día seleccionado
       const ventasDelDia = ventasDelVendedor.filter((v: VentaAPI) => {
         try {
           const ventaDate = new Date(v.fecha_venta).toISOString().split("T")[0]
@@ -243,6 +254,15 @@ export default function CierreDia() {
     }
   }
 
+  // Calcular ventas para la página actual
+  const ventasPaginadas = resumen?.ventas.slice(
+    (paginaActual - 1) * VENTAS_POR_PAGINA,
+    paginaActual * VENTAS_POR_PAGINA
+  ) || []
+
+  // Calcular total de páginas
+  const totalPaginas = Math.ceil((resumen?.ventas.length || 0) / VENTAS_POR_PAGINA)
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -284,7 +304,7 @@ export default function CierreDia() {
               </Button>
               <div>
                 <h1 className="text-2xl font-bold text-gray-900">Cierre del Día</h1>
-                <p className="text-sm text-gray-600">Resumen de actividades y ventas del día</p>
+                <p className="text-sm text-gray-600">Resumen de actividades and ventas del día</p>
               </div>
             </div>
             {cierreProcesado && (
@@ -375,12 +395,35 @@ export default function CierreDia() {
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle>Detalle de Ventas</CardTitle>
+              {resumen && resumen.ventas.length > VENTAS_POR_PAGINA && (
+                <div className="flex items-center space-x-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPaginaActual(p => Math.max(1, p - 1))}
+                    disabled={paginaActual === 1}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <span className="text-sm">
+                    Página {paginaActual} de {totalPaginas}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPaginaActual(p => Math.min(totalPaginas, p + 1))}
+                    disabled={paginaActual === totalPaginas}
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {resumen?.ventas.map((venta) => (
+                {ventasPaginadas.map((venta) => (
                   <div key={venta.id_venta} className="flex items-center justify-between p-3 border rounded-lg">
                     <div>
                       <p className="font-medium">{venta.nombre_cliente}</p>
