@@ -304,7 +304,7 @@ export default function CierreDia() {
               </Button>
               <div>
                 <h1 className="text-2xl font-bold text-gray-900">Cierre del Día</h1>
-                <p className="text-sm text-gray-600">Resumen de actividades and ventas del día</p>
+                <p className="text-sm text-gray-600">Resumen de actividades y ventas del día</p>
               </div>
             </div>
             {cierreProcesado && (
