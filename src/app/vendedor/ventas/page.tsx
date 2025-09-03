@@ -103,7 +103,7 @@ const DIAS_SEMANA_MAP: Record<number, string> = {
 
 const OPCIONES_FILTRO = [
   { value: "todos", label: "Todos los días" },
-  { value: "1", label: "Lunes" },
+  { value: "1", label: "Luenes" },
   { value: "2", label: "Martes" },
   { value: "3", label: "Miércoles" },
   { value: "4", label: "Jueves" },
@@ -399,6 +399,17 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
     }
   }
 
+  const obtenerPrecio = (producto: Producto, tipoPrecio: "completo" | "medio" | "mayorista"): number => {
+    switch (tipoPrecio) {
+      case "mayorista":
+        return producto.precio_mayorista
+      case "medio":
+        return producto.precio_medio
+      default:
+        return producto.precio_completo
+    }
+  }
+
   const agregarProducto = (producto: Producto) => {
     if (!clienteSeleccionado) {
       setError("Debe seleccionar un cliente primero")
@@ -408,11 +419,20 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
       setError(`No hay stock disponible para ${producto.nombre}`)
       return
     }
-    const defaultPriceType = availablePrices[0] as "completo" | "medio" | "mayorista"
-    const precio = obtenerPrecio(producto, defaultPriceType)
+
+    // Determinar el tipo de precio automáticamente basado en el stock
+    let precioTipo: "completo" | "medio" | "mayorista" = availablePrices[0] as "completo" | "medio" | "mayorista"
+    
+    // Si solo queda 0.5 de stock y el precio medio está disponible, usar precio medio
+    if (producto.stock === 0.5 && availablePrices.includes("medio")) {
+      precioTipo = "medio"
+    }
+
+    const precio = obtenerPrecio(producto, precioTipo)
     const detalleExistente = detallesVenta.find(
-      (d) => d.id_producto === producto.id_producto && d.tipo_precio === defaultPriceType,
+      (d) => d.id_producto === producto.id_producto && d.tipo_precio === precioTipo,
     )
+
     if (detalleExistente) {
       if (detalleExistente.cantidad + 1 > producto.stock) {
         setError(`No hay suficiente stock para ${producto.nombre}. Stock disponible: ${producto.stock}`)
@@ -428,21 +448,10 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
         id_producto: producto.id_producto,
         producto,
         cantidad: 1,
-        tipo_precio: defaultPriceType,
+        tipo_precio: precioTipo,
         subtotal: precio,
       }
       setDetallesVenta([...detallesVenta, nuevoDetalle])
-    }
-  }
-
-  const obtenerPrecio = (producto: Producto, tipoPrecio: "completo" | "medio" | "mayorista"): number => {
-    switch (tipoPrecio) {
-      case "mayorista":
-        return producto.precio_mayorista
-      case "medio":
-        return producto.precio_medio
-      default:
-        return producto.precio_completo
     }
   }
 
@@ -455,10 +464,22 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
       setError(`No hay suficiente stock para ${detalle.producto.nombre}. Stock disponible: ${detalle.producto.stock}`)
       return
     }
-    const precio = obtenerPrecio(detalle.producto, detalle.tipo_precio)
+
+    // Verificar si el stock actual es 0.5 y cambiar automáticamente a precio medio si está disponible
+    let nuevoTipoPrecio = detalle.tipo_precio
+    if (detalle.producto.stock === 0.5 && availablePrices.includes("medio")) {
+      nuevoTipoPrecio = "medio"
+    }
+
+    const precio = obtenerPrecio(detalle.producto, nuevoTipoPrecio)
     const nuevoSubtotal = precio * nuevaCantidad
+    
     setDetallesVenta((prev) =>
-      prev.map((d) => (d === detalle ? { ...d, cantidad: nuevaCantidad, subtotal: nuevoSubtotal } : d)),
+      prev.map((d) => 
+        d === detalle 
+          ? { ...d, cantidad: nuevaCantidad, tipo_precio: nuevoTipoPrecio, subtotal: nuevoSubtotal } 
+          : d
+      ),
     )
   }
 
@@ -467,6 +488,13 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
       setError(`El tipo de precio ${nuevoTipo} no está disponible para este cliente`)
       return
     }
+
+    // Validar que si el stock es 0.5, solo se permita precio medio
+    if (detalle.producto.stock === 0.5 && nuevoTipo !== "medio") {
+      setError("Solo se puede usar precio medio cuando el stock es 0.5")
+      return
+    }
+
     const precio = obtenerPrecio(detalle.producto, nuevoTipo)
     const nuevoSubtotal = precio * detalle.cantidad
     setDetallesVenta((prev) =>
@@ -949,7 +977,10 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
                             <div>
                               <h4 className="font-medium">{producto.nombre}</h4>
                               <p className="text-sm text-gray-600">Código: {producto.codigo}</p>
-                              <p className="text-sm text-gray-600">Stock: {producto.stock}</p>
+                              <p className={`text-sm ${producto.stock === 0.5 ? 'text-orange-600 font-bold' : 'text-gray-600'}`}>
+                                Stock: {producto.stock}
+                                {producto.stock === 0.5 && ' (Última unidad - Precio medio aplicado)'}
+                              </p>
                             </div>
                             <Button
                               size="sm"
@@ -960,7 +991,9 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
                                   ? "Seleccione un cliente primero"
                                   : producto.stock <= 0
                                     ? "Sin stock disponible"
-                                    : "Agregar al carrito"
+                                    : producto.stock === 0.5
+                                      ? "Se aplicará precio medio automáticamente"
+                                      : "Agregar al carrito"
                               }
                             >
                               <Plus className="h-4 w-4" />
@@ -968,13 +1001,20 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
                           </div>
                           <div className="space-y-1 text-sm">
                             {availablePrices.includes("completo") && producto.precio_completo > 0 && (
-                              <div>Completo: L. {producto.precio_completo.toFixed(2)}</div>
+                              <div className={producto.stock === 0.5 ? 'text-gray-400 line-through' : ''}>
+                                Completo: L. {producto.precio_completo.toFixed(2)}
+                              </div>
                             )}
                             {availablePrices.includes("medio") && producto.precio_medio > 0 && (
-                              <div>Medio: L. {producto.precio_medio.toFixed(2)}</div>
+                              <div className={producto.stock === 0.5 ? 'text-green-600 font-bold' : ''}>
+                                Medio: L. {producto.precio_medio.toFixed(2)}
+                                {producto.stock === 0.5 && ' (Aplicado automáticamente)'}
+                              </div>
                             )}
                             {availablePrices.includes("mayorista") && producto.precio_mayorista > 0 && (
-                              <div>Mayorista: L. {producto.precio_mayorista.toFixed(2)}</div>
+                              <div className={producto.stock === 0.5 ? 'text-gray-400 line-through' : ''}>
+                                Mayorista: L. {producto.precio_mayorista.toFixed(2)}
+                              </div>
                             )}
                             {producto.precio_completo === 0 &&
                               producto.precio_medio === 0 &&

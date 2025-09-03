@@ -157,24 +157,32 @@ export async function GET(req: NextRequest) {
       const facturasConProductos = await Promise.all(
         facturasRequest.recordset.map(async (factura) => {
           try {
-            const productosRequest = await pool
-              .request()
-              .input("id_venta", sql.Int, factura.id_venta)
-              .query(`
-                SELECT TOP 3 
-                  p.nombre,
-                  dv.cantidad,
-                  p.precio_completo as precio_unitario,
-                  dv.subtotal as total
-                FROM Detalle_Venta dv
-                JOIN Producto p ON dv.id_producto = p.id_producto
-                WHERE dv.id_venta = @id_venta
-              `);
-
-            return {
-              ...factura,
-              productos: productosRequest.recordset
-            };
+            // Crear una nueva conexión para cada consulta secundaria
+            const productPool = await getConnection();
+            try {
+              const productosRequest = await productPool
+                .request()
+                .input("id_venta", sql.Int, factura.id_venta)
+                .query(`
+                  SELECT TOP 3 
+                    p.nombre,
+                    dv.cantidad,
+                    p.precio_completo as precio_unitario,
+                    dv.subtotal as total
+                  FROM Detalle_Venta dv
+                  JOIN Producto p ON dv.id_producto = p.id_producto
+                  WHERE dv.id_venta = @id_venta
+                `);
+              
+              await closeConnection(productPool);
+              return {
+                ...factura,
+                productos: productosRequest.recordset
+              };
+            } catch (error) {
+              await closeConnection(productPool);
+              throw error;
+            }
           } catch (error) {
             console.error("Error al cargar productos para factura:", factura.id_factura, error);
             return {

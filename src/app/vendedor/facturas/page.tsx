@@ -133,7 +133,7 @@ export default function FacturasVendedor() {
         setFacturaSeleccionada(result.data)
         setModalAbierto(true)
       } else {
-        setError("Error al cargar detalles de the factura")
+        setError("Error al cargar detalles de la factura")
       }
     } catch (error) {
       setError("Error de conexión al cargar factura")
@@ -276,8 +276,18 @@ export default function FacturasVendedor() {
 
     printWindow.document.write(printContent)
     printWindow.document.close()
-    printWindow.print()
-    printWindow.close()
+    
+    // Esperar a que el contenido se cargue antes de imprimir
+    printWindow.onload = function() {
+      // Pequeño retraso para asegurar que todo esté cargado
+      setTimeout(() => {
+        printWindow.print()
+        // Cerrar la ventana después de imprimir
+        printWindow.onafterprint = function() {
+          printWindow.close()
+        }
+      }, 250)
+    }
   }
 
   const descargarFactura = (factura: Factura) => {
@@ -287,44 +297,30 @@ export default function FacturasVendedor() {
 
   const formatearFecha = (fechaString: string) => {
     try {
-      // Extraer directamente los componentes de fecha y hora de la cadena
-      // Formato esperado: YYYY-MM-DD HH:MM:SS o YYYY-MM-DDTHH:MM:SS
-      let anio, mes, dia, horas, minutos;
+      // Expresión regular para extraer componentes de fecha y hora
+      // Maneja formatos: YYYY-MM-DD HH:MM:SS y YYYY-MM-DDTHH:MM:SS
+      const regex = /(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2}):(\d{2})/;
+      const match = fechaString.match(regex);
       
-      if (fechaString.includes('T')) {
-        // Formato ISO (YYYY-MM-DDTHH:MM:SS.ZZZ)
-        const [fechaPart, tiempoPart] = fechaString.split('T');
-        [anio, mes, dia] = fechaPart.split('-');
-        
-        // Extraer solo horas y minutos, ignorando segundos y milisegundos
-        const tiempoSinMilisegundos = tiempoPart.split('.')[0];
-        [horas, minutos] = tiempoSinMilisegundos.split(':');
-      } else {
-        // Formato estándar (YYYY-MM-DD HH:MM:SS)
-        const [fechaPart, tiempoPart] = fechaString.split(' ');
-        [anio, mes, dia] = fechaPart.split('-');
-        
-        // Extraer solo horas y minutos, ignorando segundos
-        [horas, minutos] = tiempoPart.split(':');
+      if (match) {
+        const [, anio, mes, dia, horas, minutos] = match;
+        return `${dia.padStart(2, '0')}/${mes.padStart(2, '0')}/${anio} ${horas.padStart(2, '0')}:${minutos.padStart(2, '0')}`;
       }
       
-      // Usar los valores directamente sin conversión de zona horaria
-      return `${dia.padStart(2, '0')}/${mes.padStart(2, '0')}/${anio} ${horas.padStart(2, '0')}:${minutos.padStart(2, '0')}`;
+      // Si no coincide con el formato esperado, intentar con formato de fecha simple
+      const fechaSimpleRegex = /(\d{4})-(\d{2})-(\d{2})/;
+      const simpleMatch = fechaString.match(fechaSimpleRegex);
+      
+      if (simpleMatch) {
+        const [, anio, mes, dia] = simpleMatch;
+        return `${dia.padStart(2, '0')}/${mes.padStart(2, '0')}/${anio} 00:00`;
+      }
+      
+      // Si todo falla, devolver la cadena original
+      return fechaString;
     } catch (error) {
       console.error("Error al formatear fecha:", error, fechaString);
-      // Fallback: intentar con el método estándar
-      try {
-        const fecha = new Date(fechaString);
-        return fecha.toLocaleString("es-HN", {
-          year: "numeric",
-          month: "2-digit",
-          day: "2-digit",
-          hour: "2-digit",
-          minute: "2-digit"
-        });
-      } catch (e) {
-        return "Fecha inválida";
-      }
+      return fechaString;
     }
   }
 
@@ -555,7 +551,7 @@ export default function FacturasVendedor() {
 
             {facturasFiltradas.length === 0 && !loading && (
               <div className="text-center py-8">
-                <FileText className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+                <FileText className="h-12 w-12 mx-auto text-gray-40 mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">No hay facturas</h3>
                 <p className="text-gray-600">
                   {filtroActivo || terminoBusqueda
@@ -662,7 +658,7 @@ export default function FacturasVendedor() {
                         </tfoot>
                       </table>
                     </div>
-                    </div>
+                  </div>
                 )}
 
                 <div className="flex gap-2 pt-4">
