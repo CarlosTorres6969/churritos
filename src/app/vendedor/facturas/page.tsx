@@ -200,39 +200,45 @@ export default function FacturasVendedor() {
     try {
       // Crear contenido optimizado para impresora térmica de 58mm
       const contenido = `
-${'='.repeat(32)}
-      INVERSIONES MEJIA
-${'='.repeat(32)}
-FACTURA: ${factura.numero_factura}
-FECHA: ${formatearFecha(factura.fecha_emision)}
-${'-'.repeat(32)}
-CLIENTE: ${factura.nombre_cliente || "N/A"}
-${'-'.repeat(32)}
-${'Producto'.padEnd(16)}Cant  Total
-${'-'.repeat(32)}
-${factura.productos && factura.productos.length > 0 
-  ? factura.productos.map(p => 
-      `${p.nombre.substring(0, 16).padEnd(16)}${p.cantidad.toString().padStart(3)}  L.${p.total.toFixed(2)}`
-    ).join('\n')
-  : 'No hay productos'
-}
-${'-'.repeat(32)}
-TOTAL: L. ${factura.monto_total.toFixed(2)}
-${'-'.repeat(32)}
-CAI: ${factura.codigo_cai || "N/A"}
-Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}
-${'='.repeat(32)}
-¡Gracias por su compra!
+  ${'='.repeat(32)}
+        INVERSIONES MEJIA
+  ${'='.repeat(32)}
+  FACTURA: ${factura.numero_factura}
+  FECHA: ${formatearFecha(factura.fecha_emision)}
+  ${'-'.repeat(32)}
+  CLIENTE: ${factura.nombre_cliente || "N/A"}
+  ${'-'.repeat(32)}
+  ${'Producto'.padEnd(16)}Cant  Total
+  ${'-'.repeat(32)}
+  ${factura.productos && factura.productos.length > 0 
+    ? factura.productos.map(p => 
+        `${p.nombre.substring(0, 16).padEnd(16)}${p.cantidad.toString().padStart(3)}  L.${p.total.toFixed(2)}`
+      ).join('\n')
+    : 'No hay productos'
+  }
+  ${'-'.repeat(32)}
+  TOTAL: L. ${factura.monto_total.toFixed(2)}
+  ${'-'.repeat(32)}
+  CAI: ${factura.codigo_cai || "N/A"}
+  Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}
+  ${'='.repeat(32)}
+  ¡Gracias por su compra!
       `.trim();
-
+  
       console.log("Contenido para impresión:", contenido);
-
-      // Intentar diferentes métodos de impresión para dispositivos POS
+  
       let impresionExitosa = false;
-
-      // Método 1: Usando la API nativa del dispositivo POS
+  
+      // Método 1: Usar API nativa del dispositivo POS
       if (typeof window.Print !== 'undefined' && window.Print?.printText) {
         try {
+          // Verificar estado de la impresora si la API lo permite
+          if (window.getPrinterStatus) {
+            const status = await window.getPrinterStatus();
+            if (status !== 'ready') {
+              throw new Error(`Impresora no lista: ${status}`);
+            }
+          }
           window.Print.printText(contenido);
           impresionExitosa = true;
           console.log("Impresión exitosa usando API nativa");
@@ -240,10 +246,17 @@ ${'='.repeat(32)}
           console.error("Error con API nativa:", error);
         }
       }
-
-      // Método 2: Usando Bluetooth (común en dispositivos Android POS)
+  
+      // Método 2: Usar Bluetooth (común en dispositivos Android POS)
       if (!impresionExitosa && typeof window.bluetoothPrint === 'function') {
         try {
+          // Verificar estado de la impresora Bluetooth si está disponible
+          if (window.checkPrinter) {
+            const status = await window.checkPrinter();
+            if (status !== 'connected') {
+              throw new Error(`Impresora Bluetooth no conectada: ${status}`);
+            }
+          }
           window.bluetoothPrint(contenido);
           impresionExitosa = true;
           console.log("Impresión exitosa usando Bluetooth");
@@ -251,8 +264,8 @@ ${'='.repeat(32)}
           console.error("Error con Bluetooth:", error);
         }
       }
-
-      // Método 3: Usando impresora térmica integrada
+  
+      // Método 3: Usar impresora térmica integrada
       if (!impresionExitosa && typeof window.printToTerminal === 'function') {
         try {
           window.printToTerminal(contenido);
@@ -262,54 +275,77 @@ ${'='.repeat(32)}
           console.error("Error con terminal print:", error);
         }
       }
-
-      // Método 4: Fallback - intentar con ventana de impresión estándar
+  
+      // Método 4: Fallback - Ventana de impresión estándar
       if (!impresionExitosa) {
         console.log("Usando fallback de impresión estándar");
-        const ventanaImpression = window.open('', '_blank');
-        if (ventanaImpression) {
-          ventanaImpression.document.write(`
-            <html>
-              <head>
-                <title>Factura ${factura.numero_factura}</title>
-                <style>
-                  body { 
-                    font-family: 'Courier New', monospace; 
-                    font-size: 12px; 
-                    width: 80mm;
-                    margin: 0;
-                    padding: 2mm;
-                    background: white;
-                  }
-                  @media print {
-                    @page { 
-                      margin: 0; 
-                      size: 80mm auto;
-                    }
-                    body { 
-                      width: 80mm;
-                    }
-                  }
-                  pre {
-                    white-space: pre-wrap;
-                    word-wrap: break-word;
-                  }
-                </style>
-              </head>
-              <body onload="setTimeout(function() { window.print(); setTimeout(function() { window.close(); }, 100); }, 50);">
-                <pre>${contenido}</pre>
-              </body>
-            </html>
-          `);
-          ventanaImpression.document.close();
-          impresionExitosa = true;
+        const ventanaImpresion = window.open('', '_blank');
+        if (!ventanaImpresion) {
+          throw new Error("No se pudo abrir la ventana de impresión");
         }
+  
+        ventanaImpresion.document.write(`
+          <html>
+            <head>
+              <title>Factura ${factura.numero_factura}</title>
+              <style>
+                body { 
+                  font-family: 'Courier New', monospace; 
+                  font-size: 12px; 
+                  width: 58mm;
+                  margin: 0;
+                  padding: 2mm;
+                  background: white;
+                }
+                @media print {
+                  @page { 
+                    margin: 0; 
+                    size: 58mm auto;
+                  }
+                  body { 
+                    width: 58mm;
+                  }
+                }
+                pre {
+                  white-space: pre-wrap;
+                  word-wrap: break-word;
+                }
+                .print-controls {
+                  margin-top: 10px;
+                  text-align: center;
+                }
+              </style>
+            </head>
+            <body>
+              <pre>${contenido}</pre>
+              <div class="print-controls">
+                <button onclick="window.print()">Imprimir</button>
+                <button onclick="window.close()">Cancelar</button>
+              </div>
+            </body>
+          </html>
+        `);
+        ventanaImpresion.document.close();
+  
+        // Escuchar eventos de impresión
+        ventanaImpresion.addEventListener('afterprint', () => {
+          console.log("Impresión completada en ventana estándar");
+          ventanaImpresion.close();
+          impresionExitosa = true;
+        });
+  
+        // Escuchar cierre de la ventana para detectar cancelación
+        ventanaImpresion.addEventListener('unload', () => {
+          if (!impresionExitosa) {
+            console.log("Impresión cancelada por el usuario");
+          }
+        });
       }
-
+  
       if (!impresionExitosa) {
         throw new Error("No se pudo acceder a ningún método de impresión");
       }
-
+  
     } catch (error) {
       console.error("Error al imprimir factura:", error);
       alert("Error al imprimir. Verifique que la impresora esté conectada y encendida.");
