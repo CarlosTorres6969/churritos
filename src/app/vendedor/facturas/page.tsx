@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { ArrowLeft, FileText, Eye, Printer, Download, Calendar, X, Search } from "lucide-react"
+import { ArrowLeft, FileText, Eye, Printer, Download, Calendar, X, Search, Loader2 } from "lucide-react"
 import { requireAuth } from "@/lib/auth"
 
 interface Factura {
@@ -49,6 +49,31 @@ interface UsuarioAutenticado {
   apellido: string
 }
 
+// Interface for printer functions that might be available on window
+interface PrinterAPI {
+  Print?: {
+    printText: (text: string) => void;
+  };
+  bluetoothPrint?: (text: string) => void;
+  printToTerminal?: (text: string) => void;
+  getPrinterStatus?: () => Promise<string>;
+  checkPrinter?: () => Promise<string>;
+}
+
+// Extend Window interface to include printer functions
+declare global {
+  interface Window {
+    Print?: PrinterAPI['Print'];
+    bluetoothPrint?: PrinterAPI['bluetoothPrint'];
+    printToTerminal?: PrinterAPI['printToTerminal'];
+    getPrinterStatus?: PrinterAPI['getPrinterStatus'];
+    checkPrinter?: PrinterAPI['checkPrinter'];
+  }
+}
+
+// AbortController para cancelar solicitudes pendientes
+let abortController = new AbortController();
+
 export default function FacturasVendedor() {
   const [facturas, setFacturas] = useState<Factura[]>([])
   const [facturasFiltradas, setFacturasFiltradas] = useState<Factura[]>([])
@@ -63,31 +88,48 @@ export default function FacturasVendedor() {
   const [filtroActivo, setFiltroActivo] = useState(false)
   const [usuarioAutenticado, setUsuarioAutenticado] = useState<UsuarioAutenticado | null>(null)
   const [terminoBusqueda, setTerminoBusqueda] = useState("")
+  const [cargandoFactura, setCargandoFactura] = useState<number | null>(null)
+  const [imprimiendo, setImprimiendo] = useState<number | null>(null)
   const router = useRouter()
 
   const cargarFacturas = useCallback(async (idPersonal: number) => {
+    // Cancelar solicitud anterior si existe
+    abortController.abort()
+    abortController = new AbortController()
+    
     try {
       setLoading(true)
+      setError("")
       let url = `/API/Factura?page=${currentPage}&pageSize=10&id_personal=${idPersonal}`
 
       if (filtroActivo && fechaInicio && fechaFin) {
         url += `&fechaInicio=${fechaInicio}&fechaFin=${fechaFin}`
       }
 
-      const response = await fetch(url)
+      const response = await fetch(url, { 
+        signal: abortController.signal 
+      })
+      
+      if (!response.ok) {
+        throw new Error(`Error HTTP: ${response.status}`)
+      }
+      
       const result = await response.json()
 
       if (result.success) {
         setFacturas(result.data.facturas || [])
         setFacturasFiltradas(result.data.facturas || [])
         setTotalPages(result.data.pagination?.totalPages || 1)
-        setError("")
       } else {
         setError(result.error || "Error al cargar facturas")
       }
-    } catch (error) {
-      setError("Error de conexión al cargar facturas")
-      console.error("Error:", error)
+    } catch (error: unknown) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.log('Solicitud cancelada')
+      } else {
+        setError("Error de conexión al cargar facturas")
+        console.error("Error:", error)
+      }
     } finally {
       setLoading(false)
     }
@@ -98,9 +140,6 @@ export default function FacturasVendedor() {
       try {
         const user = requireAuth();
         setUsuarioAutenticado(user);
-        if (user && user.id_personal) {
-          cargarFacturas(user.id_personal);
-        }
       } catch (error) {
         console.error("Error al obtener el usuario autenticado:", error);
         router.push("/login");
@@ -108,9 +147,16 @@ export default function FacturasVendedor() {
     };
     
     obtenerUsuario();
-  }, [cargarFacturas, router])
+  }, [router])
 
-  // Filtrar facturas según término de búsqueda
+  // Cargar facturas cuando el usuario esté disponible o cambien los filtros
+  useEffect(() => {
+    if (usuarioAutenticado && usuarioAutenticado.id_personal) {
+      cargarFacturas(usuarioAutenticado.id_personal);
+    }
+  }, [usuarioAutenticado, currentPage, filtroActivo, fechaInicio, fechaFin, cargarFacturas])
+
+  // Filtrar facturas según término de búsqueda (solo para la visualización)
   useEffect(() => {
     if (terminoBusqueda) {
       const termino = terminoBusqueda.toLowerCase();
@@ -126,7 +172,13 @@ export default function FacturasVendedor() {
 
   const verFactura = async (factura: Factura) => {
     try {
+      setCargandoFactura(factura.id_factura)
       const response = await fetch(`/API/Factura?id_factura=${factura.id_factura}`)
+      
+      if (!response.ok) {
+        throw new Error(`Error HTTP: ${response.status}`)
+      }
+      
       const result = await response.json()
 
       if (result.success) {
@@ -138,167 +190,167 @@ export default function FacturasVendedor() {
     } catch (error) {
       setError("Error de conexión al cargar factura")
       console.error("Error:", error)
+    } finally {
+      setCargandoFactura(null)
     }
   }
 
-  const imprimirFactura = (factura: Factura | FacturaDetalle) => {
-    const printWindow = window.open("", "_blank")
-    if (!printWindow) {
-      alert("Por favor, permite las ventanas emergentes para imprimir")
-      return
-    }
+  const imprimirFactura = async (factura: Factura | FacturaDetalle) => {
+    setImprimiendo(factura.id_factura);
+    try {
+      // Crear contenido optimizado para impresora térmica de 58mm
+      const contenido = `
+${'='.repeat(32)}
+      INVERSIONES MEJIA
+${'='.repeat(32)}
+FACTURA: ${factura.numero_factura}
+FECHA: ${formatearFecha(factura.fecha_emision)}
+${'-'.repeat(32)}
+CLIENTE: ${factura.nombre_cliente || "N/A"}
+${'-'.repeat(32)}
+${'Producto'.padEnd(16)}Cant  Total
+${'-'.repeat(32)}
+${factura.productos && factura.productos.length > 0 
+  ? factura.productos.map(p => 
+      `${p.nombre.substring(0, 16).padEnd(16)}${p.cantidad.toString().padStart(3)}  L.${p.total.toFixed(2)}`
+    ).join('\n')
+  : 'No hay productos'
+}
+${'-'.repeat(32)}
+TOTAL: L. ${factura.monto_total.toFixed(2)}
+${'-'.repeat(32)}
+CAI: ${factura.codigo_cai || "N/A"}
+Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}
+${'='.repeat(32)}
+¡Gracias por su compra!
+      `.trim();
 
-    const productosHTML = factura.productos && factura.productos.length > 0
-      ? `
-        <table style="width: 100%; border-collapse: collapse; margin-bottom: 10px; font-size: 9px;">
-          <thead>
-            <tr style="border-bottom: 1px solid #000;">
-              <th style="text-align: left; padding: 4px;">Producto</th>
-              <th style="text-align: right; padding: 4px;">Cantidad</th>
-              <th style="text-align: right; padding: 4px;">P. Unitario</th>
-              <th style="text-align: right; padding: 4px;">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${factura.productos.map(p => `
-              <tr>
-                <td style="padding: 4px;">${p.nombre}</td>
-                <td style="text-align: right; padding: 4px;">${p.cantidad}</td>
-                <td style="text-align: right; padding: 4px;">L. ${p.precio_unitario.toFixed(2)}</td>
-                <td style="text-align: right; padding: 4px;">L. ${p.total.toFixed(2)}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      `
-      : '<p style="font-size: 9px;">No hay productos disponibles para esta factura.</p>';
+      console.log("Contenido para impresión:", contenido);
 
-    const printContent = `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Factura ${factura.numero_factura}</title>
-          <style>
-            @page {
-              size: 74mm 105mm;
-              margin: 5mm;
-            }
-            body { 
-              font-family: Arial, sans-serif; 
-              margin: 0;
-              padding: 0;
-              font-size: 10px;
-              width: 64mm;
-            }
-            .header { 
-              text-align: center; 
-              border-bottom: 1px solid #000; 
-              padding-bottom: 5px; 
-              margin-bottom: 10px;
-            }
-            .company-name {
-              font-size: 12px;
-              font-weight: bold;
-              margin-bottom: 5px;
-            }
-            .invoice-info { 
-              display: flex; 
-              justify-content: space-between; 
-              margin-bottom: 10px;
-              font-size: 9px;
-            }
-            .invoice-details { 
-              border: 1px solid #000; 
-              padding: 8px; 
-              margin-bottom: 10px;
-              font-size: 9px;
-            }
-            .total { 
-              text-align: right; 
-              font-size: 11px; 
-              font-weight: bold; 
-              margin-top: 10px;
-            }
-            .footer {
-              margin-top: 15px;
-              text-align: center;
-              font-size: 8px;
-            }
-            h1 {
-              font-size: 14px;
-              margin: 5px 0;
-            }
-            h2 {
-              font-size: 12px;
-              margin: 3px 0;
-            }
-            @media print {
-              body { margin: 0; }
-            }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <div class="company-name">Inversiones Mejia</div>
-            <h1>FACTURA</h1>
-            <h2>No. ${factura.numero_factura}</h2>
-          </div>
-          
-          <div class="invoice-info">
-            <div>
-              <strong>Cliente:</strong><br>
-              ${factura.nombre_cliente || "N/A"}
-            </div>
-            <div>
-              <strong>Fecha:</strong><br>
-              ${formatearFecha(factura.fecha_emision)}
-            </div>
-          </div>
+      // Intentar diferentes métodos de impresión para dispositivos POS
+      let impresionExitosa = false;
 
-          ${productosHTML}
-
-          <div class="invoice-details">
-            <p><strong>CAI:</strong> ${factura.codigo_cai || "N/A"}</p>
-            <p><strong>Tipo de Pago:</strong> ${"tipo_pago" in factura ? factura.tipo_pago : "N/A"}</p>
-            <p><strong>Estado:</strong> ${factura.anulada ? "ANULADA" : "ACTIVA"}</p>
-          </div>
-
-          <div class="total">
-            <p>TOTAL: L. ${factura.monto_total.toFixed(2)}</p>
-          </div>
-
-          <div class="footer">
-            <p>Factura generada el ${formatearFecha(new Date().toISOString())}</p>
-          </div>
-        </body>
-      </html>
-    `
-
-    printWindow.document.write(printContent)
-    printWindow.document.close()
-    
-    // Esperar a que el contenido se cargue antes de imprimir
-    printWindow.onload = function() {
-      // Pequeño retraso para asegurar que todo esté cargado
-      setTimeout(() => {
-        printWindow.print()
-        // Cerrar la ventana después de imprimir
-        printWindow.onafterprint = function() {
-          printWindow.close()
+      // Método 1: Usando la API nativa del dispositivo POS
+      if (typeof window.Print !== 'undefined' && window.Print?.printText) {
+        try {
+          window.Print.printText(contenido);
+          impresionExitosa = true;
+          console.log("Impresión exitosa usando API nativa");
+        } catch (error) {
+          console.error("Error con API nativa:", error);
         }
-      }, 250)
-    }
-  }
+      }
 
-  const descargarFactura = (factura: Factura) => {
-    console.log("Descargando factura:", factura.numero_factura)
-    alert(`Funcionalidad de descarga en desarrollo para factura ${factura.numero_factura}`)
+      // Método 2: Usando Bluetooth (común en dispositivos Android POS)
+      if (!impresionExitosa && typeof window.bluetoothPrint === 'function') {
+        try {
+          window.bluetoothPrint(contenido);
+          impresionExitosa = true;
+          console.log("Impresión exitosa usando Bluetooth");
+        } catch (error) {
+          console.error("Error con Bluetooth:", error);
+        }
+      }
+
+      // Método 3: Usando impresora térmica integrada
+      if (!impresionExitosa && typeof window.printToTerminal === 'function') {
+        try {
+          window.printToTerminal(contenido);
+          impresionExitosa = true;
+          console.log("Impresión exitosa en terminal");
+        } catch (error) {
+          console.error("Error con terminal print:", error);
+        }
+      }
+
+      // Método 4: Fallback - intentar con ventana de impresión estándar
+      if (!impresionExitosa) {
+        console.log("Usando fallback de impresión estándar");
+        const ventanaImpression = window.open('', '_blank');
+        if (ventanaImpression) {
+          ventanaImpression.document.write(`
+            <html>
+              <head>
+                <title>Factura ${factura.numero_factura}</title>
+                <style>
+                  body { 
+                    font-family: 'Courier New', monospace; 
+                    font-size: 12px; 
+                    width: 80mm;
+                    margin: 0;
+                    padding: 2mm;
+                    background: white;
+                  }
+                  @media print {
+                    @page { 
+                      margin: 0; 
+                      size: 80mm auto;
+                    }
+                    body { 
+                      width: 80mm;
+                    }
+                  }
+                  pre {
+                    white-space: pre-wrap;
+                    word-wrap: break-word;
+                  }
+                </style>
+              </head>
+              <body onload="setTimeout(function() { window.print(); setTimeout(function() { window.close(); }, 100); }, 50);">
+                <pre>${contenido}</pre>
+              </body>
+            </html>
+          `);
+          ventanaImpression.document.close();
+          impresionExitosa = true;
+        }
+      }
+
+      if (!impresionExitosa) {
+        throw new Error("No se pudo acceder a ningún método de impresión");
+      }
+
+    } catch (error) {
+      console.error("Error al imprimir factura:", error);
+      alert("Error al imprimir. Verifique que la impresora esté conectada y encendida.");
+    } finally {
+      setImprimiendo(null);
+    }
+  };
+
+  const descargarFactura = (factura: Factura | FacturaDetalle) => {
+    console.log("Descargando factura:", factura.numero_factura);
+    
+    // Crear contenido para descarga
+    const contenido = `
+FACTURA: ${factura.numero_factura}
+FECHA: ${formatearFecha(factura.fecha_emision)}
+CLIENTE: ${factura.nombre_cliente || "N/A"}
+${factura.productos && factura.productos.length > 0 
+  ? factura.productos.map(p => 
+      `${p.nombre} - Cant: ${p.cantidad} - Precio: L.${p.precio_unitario.toFixed(2)} - Total: L.${p.total.toFixed(2)}`
+    ).join('\n')
+  : 'No hay productos'
+}
+TOTAL: L. ${factura.monto_total.toFixed(2)}
+CAI: ${factura.codigo_cai || "N/A"}
+Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}
+    `.trim();
+
+    // Crear blob y descargar
+    const blob = new Blob([contenido], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `factura-${factura.numero_factura}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   }
 
   const formatearFecha = (fechaString: string) => {
     try {
-      // Expresión regular para extraer componentes de fecha y hora
-      // Maneja formatos: YYYY-MM-DD HH:MM:SS y YYYY-MM-DDTHH:MM:SS
       const regex = /(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2}):(\d{2})/;
       const match = fechaString.match(regex);
       
@@ -307,7 +359,6 @@ export default function FacturasVendedor() {
         return `${dia.padStart(2, '0')}/${mes.padStart(2, '0')}/${anio} ${horas.padStart(2, '0')}:${minutos.padStart(2, '0')}`;
       }
       
-      // Si no coincide con el formato esperado, intentar con formato de fecha simple
       const fechaSimpleRegex = /(\d{4})-(\d{2})-(\d{2})/;
       const simpleMatch = fechaString.match(fechaSimpleRegex);
       
@@ -316,7 +367,6 @@ export default function FacturasVendedor() {
         return `${dia.padStart(2, '0')}/${mes.padStart(2, '0')}/${anio} 00:00`;
       }
       
-      // Si todo falla, devolver la cadena original
       return fechaString;
     } catch (error) {
       console.error("Error al formatear fecha:", error, fechaString);
@@ -340,6 +390,7 @@ export default function FacturasVendedor() {
 
     setCurrentPage(1)
     setFiltroActivo(true)
+    setTerminoBusqueda("")
     setError("")
   }
 
@@ -354,7 +405,10 @@ export default function FacturasVendedor() {
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div>Cargando facturas...</div>
+        <div className="flex flex-col items-center">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-500 mb-4" />
+          <p>Cargando facturas...</p>
+        </div>
       </div>
     )
   }
@@ -502,7 +556,7 @@ export default function FacturasVendedor() {
                 <div key={factura.id_factura} className="flex items-center justify-between p-4 border rounded-lg">
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-2">
-                    <h4 className="font-medium">{factura.numero_factura}</h4>
+                      <h4 className="font-medium">{factura.numero_factura}</h4>
                       <Badge variant={factura.anulada ? "destructive" : "default"}>
                         {factura.anulada ? "Anulada" : "Activa"}
                       </Badge>
@@ -535,11 +589,29 @@ export default function FacturasVendedor() {
                   </div>
 
                   <div className="flex gap-2">
-                    <Button variant="outline" size="sm" onClick={() => verFactura(factura)}>
-                      <Eye className="h-4 w-4" />
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => verFactura(factura)}
+                      disabled={cargandoFactura === factura.id_factura}
+                    >
+                      {cargandoFactura === factura.id_factura ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
                     </Button>
-                    <Button variant="outline" size="sm" onClick={() => imprimirFactura(factura)}>
-                      <Printer className="h-4 w-4" />
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => imprimirFactura(factura)}
+                      disabled={imprimiendo === factura.id_factura}
+                    >
+                      {imprimiendo === factura.id_factura ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Printer className="h-4 w-4" />
+                      )}
                     </Button>
                     <Button variant="outline" size="sm" onClick={() => descargarFactura(factura)}>
                       <Download className="h-4 w-4" />
@@ -551,13 +623,21 @@ export default function FacturasVendedor() {
 
             {facturasFiltradas.length === 0 && !loading && (
               <div className="text-center py-8">
-                <FileText className="h-12 w-12 mx-auto text-gray-40 mb-4" />
+                <FileText className="h-12 w-12 mx-auto text-gray-400 mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">No hay facturas</h3>
                 <p className="text-gray-600">
                   {filtroActivo || terminoBusqueda
                     ? "No se encontraron facturas con los filtros aplicados"
                     : "No has generado ninguna factura aún"}
                 </p>
+              </div>
+            )}
+
+            {/* Información de paginación */}
+            {facturasFiltradas.length > 0 && (
+              <div className="mt-4 text-sm text-gray-600 text-center">
+                Mostrando {facturasFiltradas.length} de {facturas.length} facturas en esta página
+                {totalPages > 1 && ` (Página ${currentPage} de ${totalPages})`}
               </div>
             )}
 
@@ -586,7 +666,7 @@ export default function FacturasVendedor() {
         </Card>
 
         <Dialog open={modalAbierto} onOpenChange={setModalAbierto}>
-          <DialogContent className="sm:max-w-[600px]">
+          <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Detalle de Factura</DialogTitle>
               <DialogDescription>Información completa de la factura</DialogDescription>
@@ -662,8 +742,17 @@ export default function FacturasVendedor() {
                 )}
 
                 <div className="flex gap-2 pt-4">
-                  <Button variant="outline" onClick={() => imprimirFactura(facturaSeleccionada)} className="flex-1">
-                    <Printer className="h-4 w-4 mr-2" />
+                  <Button 
+                    variant="outline" 
+                    onClick={() => imprimirFactura(facturaSeleccionada)} 
+                    className="flex-1"
+                    disabled={imprimiendo === facturaSeleccionada.id_factura}
+                  >
+                    {imprimiendo === facturaSeleccionada.id_factura ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Printer className="h-4 w-4 mr-2" />
+                    )}
                     Imprimir
                   </Button>
                   <Button variant="outline" onClick={() => descargarFactura(facturaSeleccionada)} className="flex-1">

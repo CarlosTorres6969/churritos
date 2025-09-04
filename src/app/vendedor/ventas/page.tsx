@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useEffect, useCallback, Suspense } from "react"
-import React from "react" // Import React for use()
+import { useState, useEffect, useCallback, Suspense, use } from "react"
+import React from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Separator } from "@/components/ui/separator"
-import { ArrowLeft, Plus, Minus, Trash2, ShoppingCart, User, Package, Loader2, Calendar, MapPin } from "lucide-react"
+import { ArrowLeft, Plus, Minus, Trash2, ShoppingCart, User, Package, Loader2, Calendar, MapPin, Search } from "lucide-react"
 import { requireAuth } from "@/lib/auth"
 
 interface Producto {
@@ -84,7 +84,7 @@ interface UsuarioAutenticado {
 }
 
 interface RealizarVentaProps {
-  searchParams: Promise<{ [key: string]: string | string[] | undefined }> // Updated searchParams type
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>
 }
 
 interface RealizarVentaContentProps {
@@ -103,7 +103,7 @@ const DIAS_SEMANA_MAP: Record<number, string> = {
 
 const OPCIONES_FILTRO = [
   { value: "todos", label: "Todos los días" },
-  { value: "1", label: "Luenes" },
+  { value: "1", label: "Lunes" },
   { value: "2", label: "Martes" },
   { value: "3", label: "Miércoles" },
   { value: "4", label: "Jueves" },
@@ -132,7 +132,12 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
   const [rutaUsuario, setRutaUsuario] = useState<Ruta | null>(null)
   const [usuarioAutenticado, setUsuarioAutenticado] = useState<UsuarioAutenticado | null>(null)
   const [isInitialLoad, setIsInitialLoad] = useState(true)
+  const [terminoBusqueda, setTerminoBusqueda] = useState("") // Nuevo estado para el término de búsqueda
   const router = useRouter()
+
+  const esStockMedio = (stock: number): boolean => {
+    return Math.abs(stock - 0.5) < 0.1
+  }
 
   const fetchClientAndPrices = useCallback(
     async (clientId: string) => {
@@ -156,43 +161,59 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
           setError("Error al cargar información del cliente")
         }
       } catch (error) {
-        console.error("Error fetching client prices:", error)
+        console.error("Error al obtener precios del cliente:", error)
         setError("Error al cargar precios disponibles")
       }
     },
     [clientesDisponibles],
   )
 
-  const filtrarClientesPorDia = useCallback(() => {
-    if (filtroDiaVisita === "todos") {
-      if (rutaUsuario) {
-        setClientesFiltrados(
-          clientesDisponibles.filter((cliente) => cliente.id_ruta === rutaUsuario.id_ruta && cliente.activo !== false),
-        )
+  // Función para filtrar clientes por término de búsqueda y día de visita
+  const filtrarClientes = useCallback(() => {
+    let clientesFiltradosPorDia = clientesDisponibles.filter((cliente) => cliente.activo !== false);
+    
+    // Aplicar filtro por día de visita
+    if (filtroDiaVisita !== "todos") {
+      if (filtroDiaVisita === "sin_asignar") {
+        clientesFiltradosPorDia = clientesFiltradosPorDia.filter(
+          (cliente) => !cliente.dia_visita || cliente.dia_visita === 0
+        );
       } else {
-        setClientesFiltrados(clientesDisponibles.filter((cliente) => cliente.activo !== false))
-      }
-    } else if (filtroDiaVisita === "sin_asignar") {
-      const clientesFiltrados = clientesDisponibles.filter(
-        (cliente) => (!cliente.dia_visita || cliente.dia_visita === 0) && cliente.activo !== false,
-      )
-      if (rutaUsuario) {
-        setClientesFiltrados(clientesFiltrados.filter((cliente) => cliente.id_ruta === rutaUsuario.id_ruta))
-      } else {
-        setClientesFiltrados(clientesFiltrados)
-      }
-    } else {
-      const diaNumero = Number.parseInt(filtroDiaVisita)
-      const clientesFiltrados = clientesDisponibles.filter(
-        (cliente) => cliente.dia_visita === diaNumero && cliente.activo !== false,
-      )
-      if (rutaUsuario) {
-        setClientesFiltrados(clientesFiltrados.filter((cliente) => cliente.id_ruta === rutaUsuario.id_ruta))
-      } else {
-        setClientesFiltrados(clientesFiltrados)
+        const diaNumero = Number.parseInt(filtroDiaVisita);
+        clientesFiltradosPorDia = clientesFiltradosPorDia.filter(
+          (cliente) => cliente.dia_visita === diaNumero
+        );
       }
     }
-  }, [filtroDiaVisita, clientesDisponibles, rutaUsuario])
+    
+    // Aplicar filtro por ruta del usuario
+    if (rutaUsuario) {
+      clientesFiltradosPorDia = clientesFiltradosPorDia.filter(
+        (cliente) => cliente.id_ruta === rutaUsuario.id_ruta
+      );
+    }
+    
+    // Aplicar filtro por término de búsqueda si existe
+    if (terminoBusqueda.trim()) {
+      const termino = terminoBusqueda.toLowerCase().trim();
+      return clientesFiltradosPorDia.filter((cliente) => {
+        return (
+          cliente.nombre.toLowerCase().includes(termino) ||
+          cliente.apellido.toLowerCase().includes(termino) ||
+          (cliente.telefono && cliente.telefono.includes(termino)) ||
+          (cliente.direccion && cliente.direccion.toLowerCase().includes(termino))
+        );
+      });
+    }
+    
+    return clientesFiltradosPorDia;
+  }, [clientesDisponibles, filtroDiaVisita, rutaUsuario, terminoBusqueda]);
+
+  // Actualizar clientes filtrados cuando cambien los filtros
+  useEffect(() => {
+    const clientesFiltrados = filtrarClientes();
+    setClientesFiltrados(clientesFiltrados);
+  }, [filtrarClientes]);
 
   const fetchClientes = useCallback(async () => {
     if (!rutaUsuario) return
@@ -221,12 +242,11 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
           }
         })
         setClientesDisponibles(clientesProcesados)
-        setClientesFiltrados(clientesProcesados)
       } else {
         setError("Error al cargar clientes")
       }
     } catch (error) {
-      console.error("Error loading clients:", error)
+      console.error("Error al cargar clientes:", error)
       setError("Error de conexión al cargar clientes")
     } finally {
       setCargandoClientes(false)
@@ -240,7 +260,6 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
       setCargandoProductos(true)
       setError("")
 
-      // PRIMERO: Obtener todos los productos para tener los precios
       const responseProductos = await fetch("/API/Productos")
       let todosLosProductos: Producto[] = []
 
@@ -251,14 +270,11 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
         }
       }
 
-      // SEGUNDO: Obtener el inventario de la ruta
       const response = await fetch(`/API/inventario-ruta?id_ruta=${rutaUsuario.id_ruta}`)
       if (response.ok) {
         const data = await response.json()
         if (data.success) {
-          // Combinar información del inventario con los precios de productos
           const productosData: Producto[] = data.data.map((item: InventarioRuta) => {
-            // Buscar el producto correspondiente en la lista completa
             const productoCompleto = todosLosProductos.find((p) => p.id_producto === item.id_producto)
 
             return {
@@ -273,7 +289,6 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
             }
           })
 
-          // Ordenar productos por ID
           const productosOrdenados = productosData.sort((a, b) => a.id_producto - b.id_producto)
           setProductosDisponibles(productosOrdenados)
         } else {
@@ -283,7 +298,7 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
         setError("Error al cargar inventario de la ruta")
       }
     } catch (error) {
-      console.error("Error loading products:", error)
+      console.error("Error al cargar productos:", error)
       setError("Error de conexión al cargar productos")
     } finally {
       setCargandoProductos(false)
@@ -316,20 +331,15 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
     if (rutaUsuario) {
       const productosFiltrados = productosDisponibles
         .filter((producto) => producto.id_ruta === rutaUsuario.id_ruta)
-        .sort((a, b) => a.id_producto - b.id_producto) // Ordenar por ID
+        .sort((a, b) => a.id_producto - b.id_producto)
       setProductosFiltrados(productosFiltrados)
     } else {
-      const productosOrdenados = productosDisponibles.sort((a, b) => a.id_producto - b.id_producto) // Ordenar por ID
+      const productosOrdenados = productosDisponibles.sort((a, b) => a.id_producto - b.id_producto)
       setProductosFiltrados(productosOrdenados)
     }
   }, [productosDisponibles, rutaUsuario])
 
   useEffect(() => {
-    filtrarClientesPorDia()
-  }, [filtrarClientesPorDia])
-
-  useEffect(() => {
-    // Solo ejecutar una vez después de la carga inicial
     if (isInitialLoad && resolvedSearchParams && usuarioAutenticado) {
       const clientId = resolvedSearchParams?.clientId as string | undefined
       if (clientId && !clienteSeleccionado) {
@@ -368,7 +378,7 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
         setError("Error al cargar las rutas")
       }
     } catch (error) {
-      console.error("Error fetching routes:", error)
+      console.error("Error al obtener rutas:", error)
       setError("Error de conexión al cargar rutas")
     } finally {
       setCargandoRuta(false)
@@ -393,7 +403,7 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
         setAvailablePrices([])
       }
     } catch (error) {
-      console.error("Error fetching price types:", error)
+      console.error("Error al obtener tipos de precio:", error)
       setError("Error al cargar precios disponibles")
       setAvailablePrices([])
     }
@@ -415,16 +425,22 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
       setError("Debe seleccionar un cliente primero")
       return
     }
-    if (producto.stock <= 0) {
-      setError(`No hay stock disponible para ${producto.nombre}`)
+
+    const stockDisponible = Math.abs(producto.stock) < 0.01 ? 0 : producto.stock
+    if (stockDisponible < 0.5) {
+      setError(`No hay stock suficiente para ${producto.nombre} (stock: ${stockDisponible})`)
       return
     }
 
-    // Determinar el tipo de precio automáticamente basado en el stock
-    let precioTipo: "completo" | "medio" | "mayorista" = availablePrices[0] as "completo" | "medio" | "mayorista"
-    
-    // Si solo queda 0.5 de stock y el precio medio está disponible, usar precio medio
-    if (producto.stock === 0.5 && availablePrices.includes("medio")) {
+    let precioTipo: "completo" | "medio" | "mayorista" = clienteSeleccionado.tipo_cliente.includes("mayorista")
+      ? "mayorista"
+      : "completo"
+
+    if (esStockMedio(stockDisponible)) {
+      if (!availablePrices.includes("medio")) {
+        setError(`No se puede vender ${producto.nombre} con stock de 0.5 a este cliente, ya que no permite precio medio`)
+        return
+      }
       precioTipo = "medio"
     }
 
@@ -434,16 +450,18 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
     )
 
     if (detalleExistente) {
-      if (detalleExistente.cantidad + 1 > producto.stock) {
-        setError(`No hay suficiente stock para ${producto.nombre}. Stock disponible: ${producto.stock}`)
+      if (esStockMedio(stockDisponible) && detalleExistente.cantidad >= 1) {
+        setError(`Solo puedes agregar 1 unidad de ${producto.nombre} (stock: ${stockDisponible})`)
         return
       }
+
+      if (detalleExistente.cantidad + 1 > stockDisponible) {
+        setError(`No hay suficiente stock para ${producto.nombre}. Stock disponible: ${stockDisponible}`)
+        return
+      }
+
       actualizarCantidad(detalleExistente, detalleExistente.cantidad + 1)
     } else {
-      if (producto.stock < 1) {
-        setError(`No hay stock disponible para ${producto.nombre}`)
-        return
-      }
       const nuevoDetalle: DetalleVenta = {
         id_producto: producto.id_producto,
         producto,
@@ -460,24 +478,34 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
       eliminarDetalle(detalle)
       return
     }
-    if (nuevaCantidad > detalle.producto.stock) {
-      setError(`No hay suficiente stock para ${detalle.producto.nombre}. Stock disponible: ${detalle.producto.stock}`)
+
+    const stockDisponible = Math.abs(detalle.producto.stock) < 0.01 ? 0 : detalle.producto.stock
+
+    if (nuevaCantidad > stockDisponible) {
+      setError(`No hay suficiente stock para ${detalle.producto.nombre}. Stock disponible: ${stockDisponible}`)
       return
     }
 
-    // Verificar si el stock actual es 0.5 y cambiar automáticamente a precio medio si está disponible
     let nuevoTipoPrecio = detalle.tipo_precio
-    if (detalle.producto.stock === 0.5 && availablePrices.includes("medio")) {
+    if (esStockMedio(stockDisponible)) {
+      if (!availablePrices.includes("medio")) {
+        setError(`No se puede vender ${detalle.producto.nombre} con stock de 0.5 a este cliente, ya que no permite precio medio`)
+        return
+      }
       nuevoTipoPrecio = "medio"
+      if (nuevaCantidad > 1) {
+        setError(`Solo puedes vender 1 unidad de ${detalle.producto.nombre} (stock: ${stockDisponible})`)
+        return
+      }
     }
 
     const precio = obtenerPrecio(detalle.producto, nuevoTipoPrecio)
     const nuevoSubtotal = precio * nuevaCantidad
-    
+
     setDetallesVenta((prev) =>
-      prev.map((d) => 
-        d === detalle 
-          ? { ...d, cantidad: nuevaCantidad, tipo_precio: nuevoTipoPrecio, subtotal: nuevoSubtotal } 
+      prev.map((d) =>
+        d === detalle
+          ? { ...d, cantidad: nuevaCantidad, tipo_precio: nuevoTipoPrecio, subtotal: nuevoSubtotal }
           : d
       ),
     )
@@ -489,9 +517,10 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
       return
     }
 
-    // Validar que si el stock es 0.5, solo se permita precio medio
-    if (detalle.producto.stock === 0.5 && nuevoTipo !== "medio") {
-      setError("Solo se puede usar precio medio cuando el stock es 0.5")
+    const stockDisponible = Math.abs(detalle.producto.stock) < 0.01 ? 0 : detalle.producto.stock
+
+    if (esStockMedio(stockDisponible) && nuevoTipo !== "medio") {
+      setError(`Solo se puede usar precio medio para ${detalle.producto.nombre} con stock de 0.5`)
       return
     }
 
@@ -537,6 +566,7 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
           tipo_precio: detalle.tipo_precio,
         })),
       }
+      
       const response = await fetch("/API/Ventas", {
         method: "POST",
         headers: {
@@ -544,29 +574,14 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
         },
         body: JSON.stringify(ventaData),
       })
+      
       const result = await response.json()
+      
       if (!response.ok) {
         throw new Error(result.error || `Error ${response.status}: ${response.statusText}`)
       }
+      
       if (result.success) {
-        if (rutaUsuario) {
-          await Promise.all(
-            detallesVenta.map(async (detalle) => {
-              await fetch("/API/inventario-ruta", {
-                method: "PUT",
-                headers: {
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                  id_ruta: rutaUsuario.id_ruta,
-                  id_producto: detalle.id_producto,
-                  cantidad: detalle.producto.stock - detalle.cantidad,
-                }),
-              })
-            }),
-          )
-        }
-
         await fetchProductos()
         setDetallesVenta([])
         setEfectivoRecibido(0)
@@ -577,7 +592,7 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
         setError(result.error || "Error al procesar la venta")
       }
     } catch (error) {
-      console.error("Error processing sale:", error)
+      console.error("Error al procesar la venta:", error)
       setError(error instanceof Error ? `Error al procesar la venta: ${error.message}` : "Error al procesar la venta")
     } finally {
       setLoading(false)
@@ -675,7 +690,6 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Columna izquierda: Cliente y Carrito (ahora aparece primero) */}
           <div className="lg:col-span-1 space-y-6">
             <Card>
               <CardHeader>
@@ -731,6 +745,20 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
                   </div>
                 ) : (
                   <div className="space-y-3">
+                    {/* Campo de búsqueda agregado */}
+                    <div className="space-y-2">
+                      <Label>Buscar cliente</Label>
+                      <div className="relative">
+                        <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Input
+                          placeholder="Buscar por nombre, teléfono, dirección..."
+                          className="pl-8"
+                          value={terminoBusqueda}
+                          onChange={(e) => setTerminoBusqueda(e.target.value)}
+                        />
+                      </div>
+                    </div>
+
                     <div className="space-y-2">
                       <Label>Filtrar por día de visita</Label>
                       <Select value={filtroDiaVisita} onValueChange={setFiltroDiaVisita}>
@@ -780,18 +808,23 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
                               </div>
                               {cliente.telefono && <span>{cliente.telefono}</span>}
                             </div>
+                            {cliente.direccion && (
+                              <p className="text-xs text-gray-500 mt-1 truncate">{cliente.direccion}</p>
+                            )}
                           </div>
                         ))}
                       </div>
                     ) : (
                       <p className="text-gray-500 text-center py-4">
-                        {filtroDiaVisita === "todos"
-                          ? "No hay clientes disponibles en tu ruta"
-                          : filtroDiaVisita === "sin_asignar"
-                            ? "No hay clientes sin día de visita asignado en tu ruta"
-                            : `No hay clientes con visita los ${
-                                OPCIONES_FILTRO.find((d) => d.value === filtroDiaVisita)?.label || filtroDiaVisita
-                              } en tu ruta`}
+                        {terminoBusqueda.trim()
+                          ? "No se encontraron clientes que coincidan con la búsqueda"
+                          : filtroDiaVisita === "todos"
+                            ? "No hay clientes disponibles en tu ruta"
+                            : filtroDiaVisita === "sin_asignar"
+                              ? "No hay clientes sin día de visita asignado en tu ruta"
+                              : `No hay clientes con visita los ${
+                                  OPCIONES_FILTRO.find((d) => d.value === filtroDiaVisita)?.label || filtroDiaVisita
+                                } en tu ruta`}
                       </p>
                     )}
                   </div>
@@ -812,73 +845,91 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
                   <p className="text-gray-500 text-center py-4">No hay productos en el carrito</p>
                 ) : (
                   <>
-                    {detallesVenta.map((detalle, index) => (
-                      <div key={index} className="border rounded-lg p-3 space-y-2">
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <p className="font-medium">{detalle.producto.nombre}</p>
-                            <p className="text-sm text-gray-600">{detalle.producto.codigo}</p>
-                            <p className="text-sm text-gray-600">Stock disponible: {detalle.producto.stock}</p>
+                    {detallesVenta.map((detalle, index) => {
+                      const stockDisponible = Math.abs(detalle.producto.stock) < 0.01 ? 0 : detalle.producto.stock
+                      const esStockMedioProducto = esStockMedio(stockDisponible)
+                      
+                      return (
+                        <div key={index} className="border rounded-lg p-3 space-y-2">
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <p className="font-medium">{detalle.producto.nombre}</p>
+                              <p className="text-sm text-gray-600">{detalle.producto.codigo}</p>
+                              <p className={`text-sm ${esStockMedioProducto ? 'text-orange-600 font-bold' : 'text-gray-600'}`}>
+                                Stock disponible: {stockDisponible}
+                                {esStockMedioProducto && ' (Última unidad)'}
+                              </p>
+                            </div>
+                            <Button variant="ghost" size="sm" onClick={() => eliminarDetalle(detalle)}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
                           </div>
-                          <Button variant="ghost" size="sm" onClick={() => eliminarDetalle(detalle)}>
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
 
-                        <div className="flex items-center gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => actualizarCantidad(detalle, detalle.cantidad - 1)}
-                          >
-                            <Minus className="h-4 w-4" />
-                          </Button>
-                          <span className="w-8 text-center font-medium">{detalle.cantidad}</span>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => actualizarCantidad(detalle, detalle.cantidad + 1)}
-                            disabled={detalle.cantidad >= detalle.producto.stock}
-                            title={
-                              detalle.cantidad >= detalle.producto.stock
-                                ? "No hay más stock disponible"
-                                : "Aumentar cantidad"
-                            }
-                          >
-                            <Plus className="h-4 w-4" />
-                          </Button>
-                        </div>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => actualizarCantidad(detalle, detalle.cantidad - 1)}
+                            >
+                              <Minus className="h-4 w-4" />
+                            </Button>
+                            <span className="w-8 text-center font-medium">{detalle.cantidad}</span>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => actualizarCantidad(detalle, detalle.cantidad + 1)}
+                              disabled={detalle.cantidad >= stockDisponible || esStockMedioProducto}
+                              title={
+                                detalle.cantidad >= stockDisponible
+                                  ? "No hay más stock disponible"
+                                  : esStockMedioProducto
+                                    ? "Solo se puede vender 1 unidad con stock de 0.5"
+                                    : "Aumentar cantidad"
+                              }
+                            >
+                              <Plus className="h-4 w-4" />
+                            </Button>
+                          </div>
 
-                        <div className="space-y-2">
-                          <Label>Tipo de Precio</Label>
-                          <Select
-                            value={detalle.tipo_precio}
-                            onValueChange={(value: "completo" | "medio" | "mayorista") =>
-                              cambiarTipoPrecio(detalle, value)
-                            }
-                          >
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {availablePrices.map((price) => (
-                                <SelectItem key={price} value={price}>
-                                  {price.charAt(0).toUpperCase() + price.slice(1)}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
+                          <div className="space-y-2">
+                            <Label>Tipo de Precio</Label>
+                            <Select
+                              value={detalle.tipo_precio}
+                              onValueChange={(value: "completo" | "medio" | "mayorista") =>
+                                cambiarTipoPrecio(detalle, value)
+                              }
+                              disabled={esStockMedioProducto}
+                            >
+                              <SelectTrigger>
+                                <SelectValue />
+                                {esStockMedioProducto && " (Forzado a medio)"}
+                              </SelectTrigger>
+                              <SelectContent>
+                                {availablePrices.map((price) => (
+                                  <SelectItem key={price} value={price} disabled={esStockMedioProducto && price !== "medio"}>
+                                    {price.charAt(0).toUpperCase() + price.slice(1)}
+                                    {esStockMedioProducto && price !== "medio" && " (No disponible)"}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            {esStockMedioProducto && (
+                              <p className="text-xs text-orange-600">
+                                Precio medio forzado por stock bajo (0.5 unidades)
+                              </p>
+                            )}
+                          </div>
 
-                        <div className="text-right">
-                          <p className="font-medium">L. {detalle.subtotal.toFixed(2)}</p>
-                          <p className="text-sm text-gray-600">
-                            {detalle.tipo_precio} - L. {obtenerPrecio(detalle.producto, detalle.tipo_precio).toFixed(2)}{" "}
-                            c/u
-                          </p>
+                          <div className="text-right">
+                            <p className="font-medium">L. {detalle.subtotal.toFixed(2)}</p>
+                            <p className="text-sm text-gray-600">
+                              {detalle.tipo_precio} - L. {obtenerPrecio(detalle.producto, detalle.tipo_precio).toFixed(2)}{" "}
+                              c/u
+                            </p>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      )
+                    })}
 
                     <Separator />
 
@@ -947,7 +998,6 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
             </Card>
           </div>
 
-          {/* Columna derecha: Productos (ahora aparece después) */}
           <div className="lg:col-span-2">
             <Card>
               <CardHeader>
@@ -959,73 +1009,52 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
               </CardHeader>
               <CardContent>
                 {cargandoProductos ? (
-                  <div className="flex justify-center items-center py-8">
-                    <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
-                    <span className="ml-2">Cargando productos...</span>
+                  <div className="flex justify-center py-4">
+                    <Loader2 className="h-6 w-6 animate-spin" />
                   </div>
-                ) : productosFiltrados.length === 0 ? (
-                  <div className="text-center py-8">
-                    <p className="text-gray-500 mb-4">No hay productos disponibles para tu ruta</p>
-                    <Button onClick={fetchProductos}>Reintentar carga</Button>
+                ) : productosFiltrados.length > 0 ? (
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    {productosFiltrados.map((producto) => {
+                      const stockDisponible = Math.abs(producto.stock) < 0.01 ? 0 : producto.stock
+                      const esStockMedioProducto = esStockMedio(stockDisponible)
+                      const precioMostrar = clienteSeleccionado?.tipo_cliente.includes("mayorista")
+                        ? esStockMedioProducto
+                          ? producto.precio_medio
+                          : producto.precio_mayorista
+                        : esStockMedioProducto
+                          ? producto.precio_medio
+                          : producto.precio_completo
+
+                      return (
+                        <div
+                          key={producto.id_producto}
+                          className="border rounded-lg p-4 hover:bg-gray-50 transition-colors"
+                        >
+                          <p className="font-medium">{producto.nombre}</p>
+                          <p className="text-sm text-gray-600">{producto.codigo}</p>
+                          <p className={`text-sm ${esStockMedioProducto ? 'text-orange-600 font-bold' : 'text-gray-600'}`}>
+                            Stock: {stockDisponible}
+                            {esStockMedioProducto && ' (Última unidad)'}
+                          </p>
+                          <p className="text-sm font-medium mt-1">
+                            Precio: L. {precioMostrar.toFixed(2)} ({esStockMedioProducto ? 'medio' : clienteSeleccionado?.tipo_cliente.includes("mayorista") ? 'mayorista' : 'completo'})
+                          </p>
+                          <Button
+                            onClick={() => agregarProducto(producto)}
+                            className="mt-2 w-full"
+                            disabled={stockDisponible < 0.5}
+                            title={stockDisponible < 0.5 ? "No hay stock disponible" : "Agregar al carrito"}
+                          >
+                            Agregar
+                          </Button>
+                        </div>
+                      )
+                    })}
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {productosFiltrados.map((producto) => (
-                      <Card key={producto.id_producto} className="hover:shadow-md transition-shadow">
-                        <CardContent className="p-4">
-                          <div className="flex justify-between items-start mb-2">
-                            <div>
-                              <h4 className="font-medium">{producto.nombre}</h4>
-                              <p className="text-sm text-gray-600">Código: {producto.codigo}</p>
-                              <p className={`text-sm ${producto.stock === 0.5 ? 'text-orange-600 font-bold' : 'text-gray-600'}`}>
-                                Stock: {producto.stock}
-                                {producto.stock === 0.5 && ' (Última unidad - Precio medio aplicado)'}
-                              </p>
-                            </div>
-                            <Button
-                              size="sm"
-                              onClick={() => agregarProducto(producto)}
-                              disabled={!clienteSeleccionado || producto.stock <= 0}
-                              title={
-                                !clienteSeleccionado
-                                  ? "Seleccione un cliente primero"
-                                  : producto.stock <= 0
-                                    ? "Sin stock disponible"
-                                    : producto.stock === 0.5
-                                      ? "Se aplicará precio medio automáticamente"
-                                      : "Agregar al carrito"
-                              }
-                            >
-                              <Plus className="h-4 w-4" />
-                            </Button>
-                          </div>
-                          <div className="space-y-1 text-sm">
-                            {availablePrices.includes("completo") && producto.precio_completo > 0 && (
-                              <div className={producto.stock === 0.5 ? 'text-gray-400 line-through' : ''}>
-                                Completo: L. {producto.precio_completo.toFixed(2)}
-                              </div>
-                            )}
-                            {availablePrices.includes("medio") && producto.precio_medio > 0 && (
-                              <div className={producto.stock === 0.5 ? 'text-green-600 font-bold' : ''}>
-                                Medio: L. {producto.precio_medio.toFixed(2)}
-                                {producto.stock === 0.5 && ' (Aplicado automáticamente)'}
-                              </div>
-                            )}
-                            {availablePrices.includes("mayorista") && producto.precio_mayorista > 0 && (
-                              <div className={producto.stock === 0.5 ? 'text-gray-400 line-through' : ''}>
-                                Mayorista: L. {producto.precio_mayorista.toFixed(2)}
-                              </div>
-                            )}
-                            {producto.precio_completo === 0 &&
-                              producto.precio_medio === 0 &&
-                              producto.precio_mayorista === 0 && (
-                                <div className="text-red-500">Precios no disponibles</div>
-                              )}
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
+                  <p className="text-gray-500 text-center py-4">
+                    No hay productos disponibles en tu ruta
+                  </p>
                 )}
               </CardContent>
             </Card>
@@ -1037,19 +1066,9 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
 }
 
 export default function RealizarVenta({ searchParams }: RealizarVentaProps) {
-  const resolvedSearchParams = React.use(searchParams)
-
+  const resolvedSearchParams = use(searchParams)
   return (
-    <Suspense
-      fallback={
-        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-          <div className="text-center">
-            <Loader2 className="h-8 w-8 animate-spin mx-auto text-blue-500" />
-            <p className="mt-2">Cargando página de ventas...</p>
-          </div>
-        </div>
-      }
-    >
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin" /></div>}>
       <RealizarVentaContent resolvedSearchParams={resolvedSearchParams} />
     </Suspense>
   )

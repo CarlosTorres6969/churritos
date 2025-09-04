@@ -157,7 +157,6 @@ export async function GET(req: NextRequest) {
       const facturasConProductos = await Promise.all(
         facturasRequest.recordset.map(async (factura) => {
           try {
-            // Crear una nueva conexión para cada consulta secundaria
             const productPool = await getConnection();
             try {
               const productosRequest = await productPool
