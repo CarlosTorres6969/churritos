@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
@@ -93,7 +94,6 @@ export default function FacturasVendedor() {
   const router = useRouter()
 
   const cargarFacturas = useCallback(async (idPersonal: number) => {
-    // Cancelar solicitud anterior si existe
     abortController.abort()
     abortController = new AbortController()
     
@@ -149,14 +149,12 @@ export default function FacturasVendedor() {
     obtenerUsuario();
   }, [router])
 
-  // Cargar facturas cuando el usuario esté disponible o cambien los filtros
   useEffect(() => {
     if (usuarioAutenticado && usuarioAutenticado.id_personal) {
       cargarFacturas(usuarioAutenticado.id_personal);
     }
   }, [usuarioAutenticado, currentPage, filtroActivo, fechaInicio, fechaFin, cargarFacturas])
 
-  // Filtrar facturas según término de búsqueda (solo para la visualización)
   useEffect(() => {
     if (terminoBusqueda) {
       const termino = terminoBusqueda.toLowerCase();
@@ -198,41 +196,38 @@ export default function FacturasVendedor() {
   const imprimirFactura = async (factura: Factura | FacturaDetalle) => {
     setImprimiendo(factura.id_factura);
     try {
-      // Crear contenido optimizado para impresora térmica de 58mm
       const contenido = `
-  ${'='.repeat(32)}
-        INVERSIONES MEJIA
-  ${'='.repeat(32)}
-  FACTURA: ${factura.numero_factura}
-  FECHA: ${formatearFecha(factura.fecha_emision)}
-  ${'-'.repeat(32)}
-  CLIENTE: ${factura.nombre_cliente || "N/A"}
-  ${'-'.repeat(32)}
-  ${'Producto'.padEnd(16)}Cant  Total
-  ${'-'.repeat(32)}
-  ${factura.productos && factura.productos.length > 0 
-    ? factura.productos.map(p => 
-        `${p.nombre.substring(0, 16).padEnd(16)}${p.cantidad.toString().padStart(3)}  L.${p.total.toFixed(2)}`
-      ).join('\n')
-    : 'No hay productos'
-  }
-  ${'-'.repeat(32)}
-  TOTAL: L. ${factura.monto_total.toFixed(2)}
-  ${'-'.repeat(32)}
-  CAI: ${factura.codigo_cai || "N/A"}
-  Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}
-  ${'='.repeat(32)}
-  ¡Gracias por su compra!
+${'='.repeat(32)}
+      INVERSIONES MEJIA
+${'='.repeat(32)}
+FACTURA: ${factura.numero_factura}
+FECHA: ${formatearFecha(factura.fecha_emision)}
+${'-'.repeat(32)}
+CLIENTE: ${factura.nombre_cliente || "N/A"}
+${'-'.repeat(32)}
+${'Producto'.padEnd(16)}Cant  Total
+${'-'.repeat(32)}
+${factura.productos && factura.productos.length > 0 
+  ? factura.productos.map(p => 
+      `${p.nombre.substring(0, 16).padEnd(16)}${p.cantidad.toString().padStart(3)}  L.${p.total.toFixed(2)}`
+    ).join('\n')
+  : 'No hay productos'
+}
+${'-'.repeat(32)}
+TOTAL: L. ${factura.monto_total.toFixed(2)}
+${'-'.repeat(32)}
+CAI: ${factura.codigo_cai || "N/A"}
+Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}
+${'='.repeat(32)}
+¡Gracias por su compra!
       `.trim();
-  
+
       console.log("Contenido para impresión:", contenido);
-  
+
       let impresionExitosa = false;
-  
-      // Método 1: Usar API nativa del dispositivo POS
+
       if (typeof window.Print !== 'undefined' && window.Print?.printText) {
         try {
-          // Verificar estado de la impresora si la API lo permite
           if (window.getPrinterStatus) {
             const status = await window.getPrinterStatus();
             if (status !== 'ready') {
@@ -246,11 +241,9 @@ export default function FacturasVendedor() {
           console.error("Error con API nativa:", error);
         }
       }
-  
-      // Método 2: Usar Bluetooth (común en dispositivos Android POS)
+
       if (!impresionExitosa && typeof window.bluetoothPrint === 'function') {
         try {
-          // Verificar estado de la impresora Bluetooth si está disponible
           if (window.checkPrinter) {
             const status = await window.checkPrinter();
             if (status !== 'connected') {
@@ -264,8 +257,7 @@ export default function FacturasVendedor() {
           console.error("Error con Bluetooth:", error);
         }
       }
-  
-      // Método 3: Usar impresora térmica integrada
+
       if (!impresionExitosa && typeof window.printToTerminal === 'function') {
         try {
           window.printToTerminal(contenido);
@@ -275,15 +267,14 @@ export default function FacturasVendedor() {
           console.error("Error con terminal print:", error);
         }
       }
-  
-      // Método 4: Fallback - Ventana de impresión estándar
+
       if (!impresionExitosa) {
         console.log("Usando fallback de impresión estándar");
         const ventanaImpresion = window.open('', '_blank');
         if (!ventanaImpresion) {
           throw new Error("No se pudo abrir la ventana de impresión");
         }
-  
+
         ventanaImpresion.document.write(`
           <html>
             <head>
@@ -326,26 +317,24 @@ export default function FacturasVendedor() {
           </html>
         `);
         ventanaImpresion.document.close();
-  
-        // Escuchar eventos de impresión
+
         ventanaImpresion.addEventListener('afterprint', () => {
           console.log("Impresión completada en ventana estándar");
           ventanaImpresion.close();
           impresionExitosa = true;
         });
-  
-        // Escuchar cierre de la ventana para detectar cancelación
+
         ventanaImpresion.addEventListener('unload', () => {
           if (!impresionExitosa) {
             console.log("Impresión cancelada por el usuario");
           }
         });
       }
-  
+
       if (!impresionExitosa) {
         throw new Error("No se pudo acceder a ningún método de impresión");
       }
-  
+
     } catch (error) {
       console.error("Error al imprimir factura:", error);
       alert("Error al imprimir. Verifique que la impresora esté conectada y encendida.");
@@ -357,7 +346,6 @@ export default function FacturasVendedor() {
   const descargarFactura = (factura: Factura | FacturaDetalle) => {
     console.log("Descargando factura:", factura.numero_factura);
     
-    // Crear contenido para descarga
     const contenido = `
 FACTURA: ${factura.numero_factura}
 FECHA: ${formatearFecha(factura.fecha_emision)}
@@ -373,7 +361,6 @@ CAI: ${factura.codigo_cai || "N/A"}
 Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}
     `.trim();
 
-    // Crear blob y descargar
     const blob = new Blob([contenido], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -451,17 +438,17 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow-sm border-b">
+      <header className="bg-white shadow-sm border-b sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between py-4">
-            <div className="flex items-center space-x-4">
-              <Button variant="ghost" onClick={() => router.back()}>
+          <div className="flex flex-col sm:flex-row items-center justify-between py-4">
+            <div className="flex items-center space-x-4 w-full sm:w-auto">
+              <Button variant="ghost" onClick={() => router.back()} className="flex-shrink-0">
                 <ArrowLeft className="h-4 w-4 mr-2" />
                 Volver
               </Button>
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">Mis Facturas</h1>
-                <p className="text-sm text-gray-600">Facturas generadas por mí</p>
+              <div className="flex-1 text-center sm:text-left">
+                <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Mis Facturas</h1>
+                <p className="text-xs sm:text-sm text-gray-600">Facturas generadas por mí</p>
                 {usuarioAutenticado && (
                   <p className="text-xs text-gray-500">Vendedor: {usuarioAutenticado.nombre} {usuarioAutenticado.apellido}</p>
                 )}
@@ -471,18 +458,18 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}
         </div>
       </header>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {error && (
-          <Alert variant="destructive" className="mb-6">
+          <Alert variant="destructive" className="mb-4">
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
 
         {/* Buscador */}
-        <Card className="mb-6">
+        <Card className="mb-4">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Search className="h-5 w-5" />
+            <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
+              <Search className="h-4 w-4 sm:h-5 sm:w-5" />
               Buscar Facturas
             </CardTitle>
           </CardHeader>
@@ -494,40 +481,47 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}
                 placeholder="Buscar por número de factura o nombre de cliente..."
                 value={terminoBusqueda}
                 onChange={(e) => setTerminoBusqueda(e.target.value)}
-                className="pl-10"
+                className="pl-10 text-sm"
               />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="mb-6">
+        <Card className="mb-4">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Calendar className="h-5 w-5" />
+            <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
+              <Calendar className="h-4 w-4 sm:h-5 sm:w-5" />
               Filtrar por Fecha de Emisión
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="flex flex-col sm:flex-row gap-4 items-end">
-              <div className="flex-1">
-                <label className="block text-sm font-medium mb-2">Fecha Inicio</label>
-                <Input
-                  type="date"
-                  value={fechaInicio}
-                  onChange={(e) => setFechaInicio(e.target.value)}
-                  className="w-full"
-                />
+            <div className="flex flex-col gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Fecha Inicio</label>
+                  <Input
+                    type="date"
+                    value={fechaInicio}
+                    onChange={(e) => setFechaInicio(e.target.value)}
+                    className="w-full text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Fecha Fin</label>
+                  <Input
+                    type="date"
+                    value={fechaFin}
+                    onChange={(e) => setFechaFin(e.target.value)}
+                    className="w-full text-sm"
+                  />
+                </div>
               </div>
-              <div className="flex-1">
-                <label className="block text-sm font-medium mb-2">Fecha Fin</label>
-                <Input type="date" value={fechaFin} onChange={(e) => setFechaFin(e.target.value)} className="w-full" />
-              </div>
-              <div className="flex gap-2">
-                <Button onClick={aplicarFiltroFecha} disabled={!fechaInicio || !fechaFin}>
+              <div className="flex flex-col sm:flex-row gap-2 sm:justify-end">
+                <Button onClick={aplicarFiltroFecha} disabled={!fechaInicio || !fechaFin} className="w-full sm:w-auto">
                   Filtrar
                 </Button>
                 {filtroActivo && (
-                  <Button variant="outline" onClick={limpiarFiltro}>
+                  <Button variant="outline" onClick={limpiarFiltro} className="w-full sm:w-auto">
                     <X className="h-4 w-4 mr-2" />
                     Limpiar
                   </Button>
@@ -536,7 +530,7 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}
             </div>
             {filtroActivo && (
               <div className="mt-3 p-3 bg-blue-50 rounded-lg">
-                <p className="text-sm text-blue-700">
+                <p className="text-xs sm:text-sm text-blue-700">
                   Mostrando facturas del {new Date(fechaInicio).toLocaleDateString("es-HN")} al{" "}
                   {new Date(fechaFin).toLocaleDateString("es-HN")}
                 </p>
@@ -545,14 +539,14 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}
           </CardContent>
         </Card>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Facturas Emitidas</CardTitle>
               <FileText className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{facturasActivas}</div>
+              <div className="text-lg sm:text-2xl font-bold">{facturasActivas}</div>
               <p className="text-xs text-muted-foreground">facturas activas</p>
             </CardContent>
           </Card>
@@ -563,7 +557,7 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}
               <FileText className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">L. {totalFacturado.toFixed(2)}</div>
+              <div className="text-lg sm:text-2xl font-bold">L. {totalFacturado.toFixed(2)}</div>
               <p className="text-xs text-muted-foreground">monto total</p>
             </CardContent>
           </Card>
@@ -574,7 +568,7 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}
               <FileText className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">
+              <div className="text-lg sm:text-2xl font-bold">
                 L. {facturasActivas > 0 ? (totalFacturado / facturasActivas).toFixed(2) : "0.00"}
               </div>
               <p className="text-xs text-muted-foreground">promedio</p>
@@ -584,20 +578,20 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}
 
         <Card>
           <CardHeader>
-            <CardTitle>Mis Facturas Emitidas</CardTitle>
+            <CardTitle className="text-base sm:text-lg">Mis Facturas Emitidas</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
               {facturasFiltradas.map((factura) => (
-                <div key={factura.id_factura} className="flex items-center justify-between p-4 border rounded-lg">
-                  <div className="flex-1">
+                <div key={factura.id_factura} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 border rounded-lg">
+                  <div className="flex-1 mb-2 sm:mb-0">
                     <div className="flex items-center gap-3 mb-2">
-                      <h4 className="font-medium">{factura.numero_factura}</h4>
-                      <Badge variant={factura.anulada ? "destructive" : "default"}>
+                      <h4 className="font-medium text-sm sm:text-base">{factura.numero_factura}</h4>
+                      <Badge variant={factura.anulada ? "destructive" : "default"} className="text-xs">
                         {factura.anulada ? "Anulada" : "Activa"}
                       </Badge>
                     </div>
-                    <p className="text-sm text-gray-600">{factura.nombre_cliente}</p>
+                    <p className="text-xs sm:text-sm text-gray-600">{factura.nombre_cliente}</p>
                     
                     {factura.productos && factura.productos.length > 0 && (
                       <div className="mt-2 text-xs text-gray-500">
@@ -620,38 +614,41 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}
                     <p className="text-xs text-gray-500">CAI: {factura.codigo_cai}</p>
                   </div>
 
-                  <div className="text-right mr-4">
-                    <p className="text-lg font-bold">L. {factura.monto_total.toFixed(2)}</p>
-                  </div>
-
-                  <div className="flex gap-2">
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={() => verFactura(factura)}
-                      disabled={cargandoFactura === factura.id_factura}
-                    >
-                      {cargandoFactura === factura.id_factura ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Eye className="h-4 w-4" />
-                      )}
-                    </Button>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={() => imprimirFactura(factura)}
-                      disabled={imprimiendo === factura.id_factura}
-                    >
-                      {imprimiendo === factura.id_factura ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Printer className="h-4 w-4" />
-                      )}
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => descargarFactura(factura)}>
-                      <Download className="h-4 w-4" />
-                    </Button>
+                  <div className="flex items-center justify-between w-full sm:w-auto sm:flex-col sm:items-end gap-2 sm:gap-4">
+                    <p className="text-base sm:text-lg font-bold sm:mr-4">L. {factura.monto_total.toFixed(2)}</p>
+                    <div className="flex gap-1 sm:gap-2">
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => verFactura(factura)}
+                        disabled={cargandoFactura === factura.id_factura}
+                      >
+                        {cargandoFactura === factura.id_factura ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => imprimirFactura(factura)}
+                        disabled={imprimiendo === factura.id_factura}
+                      >
+                        {imprimiendo === factura.id_factura ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Printer className="h-4 w-4" />
+                        )}
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => descargarFactura(factura)}
+                      >
+                        <Download className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -659,9 +656,9 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}
 
             {facturasFiltradas.length === 0 && !loading && (
               <div className="text-center py-8">
-                <FileText className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">No hay facturas</h3>
-                <p className="text-gray-600">
+                <FileText className="h-10 w-10 sm:h-12 sm:w-12 mx-auto text-gray-400 mb-4" />
+                <h3 className="text-base sm:text-lg font-medium text-gray-900 mb-2">No hay facturas</h3>
+                <p className="text-sm text-gray-600">
                   {filtroActivo || terminoBusqueda
                     ? "No se encontraron facturas con los filtros aplicados"
                     : "No has generado ninguna factura aún"}
@@ -669,30 +666,31 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}
               </div>
             )}
 
-            {/* Información de paginación */}
             {facturasFiltradas.length > 0 && (
-              <div className="mt-4 text-sm text-gray-600 text-center">
+              <div className="mt-4 text-xs sm:text-sm text-gray-600 text-center">
                 Mostrando {facturasFiltradas.length} de {facturas.length} facturas en esta página
                 {totalPages > 1 && ` (Página ${currentPage} de ${totalPages})`}
               </div>
             )}
 
             {totalPages > 1 && (
-              <div className="flex justify-center gap-2 mt-6">
+              <div className="flex flex-col sm:flex-row justify-center gap-2 mt-4 sm:mt-6">
                 <Button
                   variant="outline"
                   onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
                   disabled={currentPage === 1}
+                  className="w-full sm:w-auto"
                 >
                   Anterior
                 </Button>
-                <span className="flex items-center px-4">
+                <span className="flex items-center px-4 text-xs sm:text-sm">
                   Página {currentPage} de {totalPages}
                 </span>
                 <Button
                   variant="outline"
                   onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
                   disabled={currentPage === totalPages}
+                  className="w-full sm:w-auto"
                 >
                   Siguiente
                 </Button>
@@ -702,15 +700,15 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}
         </Card>
 
         <Dialog open={modalAbierto} onOpenChange={setModalAbierto}>
-          <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+          <DialogContent className="w-[95vw] sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>Detalle de Factura</DialogTitle>
-              <DialogDescription>Información completa de la factura</DialogDescription>
+              <DialogTitle className="text-base sm:text-lg">Detalle de Factura</DialogTitle>
+              <DialogDescription className="text-xs sm:text-sm">Información completa de la factura</DialogDescription>
             </DialogHeader>
 
             {facturaSeleccionada && (
               <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4 text-sm">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs sm:text-sm">
                   <div>
                     <strong>Número:</strong>
                     <p>{facturaSeleccionada.numero_factura}</p>
@@ -733,26 +731,26 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}
                   </div>
                   <div>
                     <strong>Estado:</strong>
-                    <Badge variant={facturaSeleccionada.anulada ? "destructive" : "default"}>
+                    <Badge variant={facturaSeleccionada.anulada ? "destructive" : "default"} className="text-xs">
                       {facturaSeleccionada.anulada ? "Anulada" : "Activa"}
                     </Badge>
                   </div>
-                  <div className="col-span-2">
+                  <div className="col-span-1 sm:col-span-2">
                     <strong>Monto Total:</strong>
-                    <p className="text-lg font-bold">L. {facturaSeleccionada.monto_total.toFixed(2)}</p>
+                    <p className="text-base sm:text-lg font-bold">L. {facturaSeleccionada.monto_total.toFixed(2)}</p>
                   </div>
                 </div>
 
                 {facturaSeleccionada.productos && facturaSeleccionada.productos.length > 0 && (
                   <div className="border-t pt-4">
-                    <h4 className="font-medium mb-2">Detalles de la Venta:</h4>
-                    <div className="border rounded-lg overflow-hidden">
-                      <table className="w-full text-sm">
+                    <h4 className="font-medium mb-2 text-sm sm:text-base">Detalles de la Venta:</h4>
+                    <div className="border rounded-lg overflow-x-auto">
+                      <table className="w-full text-xs sm:text-sm">
                         <thead className="bg-gray-50">
                           <tr>
                             <th className="text-left p-2 font-medium">Producto</th>
                             <th className="text-right p-2 font-medium">Cantidad</th>
-                            <th className="text-right p-2 font-medium">Precio Unitario</th>
+                            <th className="text-right p-2 font-medium hidden sm:table-cell">Precio Unitario</th>
                             <th className="text-right p-2 font-medium">Total</th>
                           </tr>
                         </thead>
@@ -761,14 +759,14 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}
                             <tr key={index} className={index % 2 === 0 ? "bg-white" : "bg-gray-50"}>
                               <td className="p-2">{producto.nombre}</td>
                               <td className="p-2 text-right">{producto.cantidad}</td>
-                              <td className="p-2 text-right">L. {producto.precio_unitario.toFixed(2)}</td>
+                              <td className="p-2 text-right hidden sm:table-cell">L. {producto.precio_unitario.toFixed(2)}</td>
                               <td className="p-2 text-right">L. {producto.total.toFixed(2)}</td>
                             </tr>
                           ))}
                         </tbody>
                         <tfoot className="bg-gray-100">
                           <tr>
-                            <td colSpan={3} className="p-2 text-right font-medium">Total:</td>
+                            <td colSpan={3} className="p-2 text-right font-medium sm:col-span-3">Total:</td>
                             <td className="p-2 text-right font-medium">L. {facturaSeleccionada.monto_total.toFixed(2)}</td>
                           </tr>
                         </tfoot>
@@ -777,7 +775,7 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}
                   </div>
                 )}
 
-                <div className="flex gap-2 pt-4">
+                <div className="flex flex-col sm:flex-row gap-2 pt-4">
                   <Button 
                     variant="outline" 
                     onClick={() => imprimirFactura(facturaSeleccionada)} 
@@ -791,7 +789,11 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}
                     )}
                     Imprimir
                   </Button>
-                  <Button variant="outline" onClick={() => descargarFactura(facturaSeleccionada)} className="flex-1">
+                  <Button 
+                    variant="outline" 
+                    onClick={() => descargarFactura(facturaSeleccionada)} 
+                    className="flex-1"
+                  >
                     <Download className="h-4 w-4 mr-2" />
                     Descargar
                   </Button>
