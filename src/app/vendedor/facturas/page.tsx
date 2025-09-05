@@ -280,21 +280,40 @@ ${line}`
             }
             @media screen {
               body {
-                font-family: 'Courier New', monospace;
-                font-size: 8px;
-                padding: 10px;
+                font-family: Arial, sans-serif;
+                font-size: 14px;
+                padding: 20px;
                 background-color: #f5f5f5;
+                line-height: 1.6;
               }
               .print-controls {
                 display: block;
-                margin: 10px 0;
+                margin: 20px 0;
                 text-align: center;
+              }
+              .instructions {
+                background-color: #fff3cd;
+                border: 1px solid #ffeaa7;
+                border-radius: 5px;
+                padding: 15px;
+                margin: 15px 0;
+              }
+              .instructions h3 {
+                margin-top: 0;
+                color: #856404;
+              }
+              .instructions ol {
+                padding-left: 20px;
+              }
+              .instructions li {
+                margin-bottom: 8px;
               }
             }
             pre {
               white-space: pre-wrap;
               word-wrap: break-word;
               margin: 0;
+              font-family: 'Courier New', monospace;
             }
             .container {
               width: ${A7_CONFIG.width}mm;
@@ -302,35 +321,72 @@ ${line}`
               padding: 2mm;
               background: white;
               box-sizing: border-box;
+              border: 1px dashed #ccc;
+              margin: 0 auto;
             }
             .status-message {
-              padding: 5px;
-              margin: 5px 0;
-              border-radius: 3px;
+              padding: 10px;
+              margin: 10px 0;
+              border-radius: 5px;
               text-align: center;
             }
             .info {
-              background-color: #eef;
-              color: #336;
+              background-color: #d1ecf1;
+              color: #0c5460;
+              border: 1px solid #bee5eb;
             }
             .warning {
-              background-color: #ffe;
-              color: #663;
+              background-color: #fff3cd;
+              color: #856404;
+              border: 1px solid #ffeaa7;
             }
             button {
-              padding: 5px 10px;
-              margin: 0 5px;
+              padding: 10px 20px;
+              margin: 0 10px;
               cursor: pointer;
+              background-color: #007bff;
+              color: white;
+              border: none;
+              border-radius: 4px;
+              font-size: 16px;
+            }
+            button:hover {
+              background-color: #0056b3;
+            }
+            .button-secondary {
+              background-color: #6c757d;
+            }
+            .button-secondary:hover {
+              background-color: #545b62;
             }
           </style>
         </head>
         <body>
           <div class="no-print">
             <div class="status-message info">
-              Vista previa para impresión en formato A7 (74x105mm)
+              <h2>Vista previa para impresión en formato A7 (74x105mm)</h2>
             </div>
+            
+            <div class="instructions">
+              <h3>Instrucciones para configurar la impresión:</h3>
+              <ol>
+                <li>Haga clic en el botón "Imprimir"</li>
+                <li>En el diálogo de impresión, seleccione su impresora POS</li>
+                <li>Configure las opciones de impresión:
+                  <ul>
+                    <li><strong>Tamaño de papel:</strong> Personalizado (74mm x 105mm)</li>
+                    <li><strong>Orientación:</strong> Vertical</li>
+                    <li><strong>Márgenes:</strong> Ninguno o Mínimos</li>
+                    <li><strong>Escala:</strong> 100% (sin ajuste)</li>
+                  </ul>
+                </li>
+                <li>Haga clic en "Imprimir"</li>
+              </ol>
+              <p><strong>Nota:</strong> Asegúrese de que la impresora POS tenga papel de 80mm de ancho (el estándar para impresoras térmicas)</p>
+            </div>
+
             <div class="status-message warning">
-              No se detectó una impresora POS compatible. Use la impresión del navegador.
+              <p><strong>No se detectó una impresora POS compatible.</strong> Use la impresión del navegador y seleccione manualmente su impresora.</p>
             </div>
           </div>
           
@@ -340,8 +396,7 @@ ${line}`
           
           <div class="print-controls no-print">
             <button onclick="window.print()">Imprimir</button>
-            <button onclick="window.close()">Cerrar</button>
-            <p>Configure su impresora para usar papel de 74mm de ancho</p>
+            <button onclick="window.close()" class="button-secondary">Cerrar</button>
           </div>
           
           <script>
