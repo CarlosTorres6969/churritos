@@ -95,16 +95,34 @@ export async function GET(req: NextRequest) {
                             ELSE 'otros'
                         END
                     WHEN descripcion LIKE '%G%' THEN 'completo'
+                    WHEN descripcion LIKE '%C%' THEN 'completo'
                     ELSE 
                         CASE WHEN tipo_precio = 'completo' THEN 'completo' ELSE 'otros' END
                 END AS category,
                 CASE 
-                    WHEN descripcion LIKE '%L4%' AND tipo_precio = 'medio' THEN cantidad / 2.0
-                    WHEN descripcion LIKE '%L4%' AND tipo_precio = 'completo' THEN cantidad
-                    WHEN descripcion LIKE '%L3%' AND tipo_precio = 'medio' THEN cantidad / 2.0
-                    WHEN descripcion LIKE '%L3%' AND tipo_precio = 'completo' THEN cantidad
+                    WHEN descripcion LIKE '%L4%' THEN
+                        CASE 
+                            WHEN tipo_precio = 'medio' THEN cantidad / 2.0
+                            WHEN tipo_precio IN ('completo', 'mayorista') THEN cantidad
+                            ELSE 0
+                        END
+                    WHEN descripcion LIKE '%L3%' THEN
+                        CASE 
+                            WHEN tipo_precio = 'medio' THEN cantidad / 2.0
+                            WHEN tipo_precio IN ('completo', 'mayorista') THEN cantidad
+                            ELSE 0
+                        END
                     WHEN descripcion LIKE '%G%' THEN 
                         CASE 
+                            WHEN tipo_precio = 'mayorista' AND precio_mayorista = 38.50 THEN cantidad * 2
+                            WHEN tipo_precio = 'mayorista' AND precio_mayorista = 18.80 THEN cantidad
+                            WHEN precio_completo = 20 THEN cantidad / 2.0
+                            WHEN precio_completo = 40 THEN cantidad
+                            ELSE cantidad
+                        END
+                    WHEN descripcion LIKE '%C%' THEN 
+                        CASE 
+                            WHEN tipo_precio = 'mayorista' AND precio_mayorista = 38.50 THEN cantidad * 2
                             WHEN precio_completo = 20 THEN cantidad / 2.0
                             WHEN precio_completo = 40 THEN cantidad
                             ELSE cantidad
@@ -134,6 +152,12 @@ export async function GET(req: NextRequest) {
                 total_unidades,
                 total_unidades * 
                     CASE 
+                        -- Nuevas reglas para productos con precio mayorista
+                        WHEN descripcion LIKE '%G%' AND precio_mayorista = 38.50 THEN 2
+                        WHEN descripcion LIKE '%C%' AND precio_mayorista = 38.50 THEN 2
+                        WHEN descripcion LIKE '%G%' AND precio_mayorista = 18.80 THEN 1
+                        
+                        -- Reglas existentes
                         WHEN category = 'mayorista' AND descripcion LIKE '%L4%' AND precio_mayorista = 150 THEN 4
                         WHEN category = 'mayorista' AND descripcion LIKE '%L4%' AND precio_mayorista = 154 THEN 4
                         WHEN category = 'mayorista' AND descripcion LIKE '%L3%' AND precio_mayorista = 110 THEN 3
@@ -152,6 +176,12 @@ export async function GET(req: NextRequest) {
                     END AS liquidacion_vendedor,
                 total_unidades * 
                     CASE 
+                        -- Nuevas reglas para productos con precio mayorista
+                        WHEN descripcion LIKE '%G%' AND precio_mayorista = 38.50 THEN 3.412
+                        WHEN descripcion LIKE '%C%' AND precio_mayorista = 38.50 THEN 3.412
+                        WHEN descripcion LIKE '%G%' AND precio_mayorista = 18.80 THEN 1.46
+                        
+                        -- Reglas existentes
                         WHEN category = 'mayorista' AND descripcion LIKE '%L4%' AND precio_mayorista = 150 THEN 13.648
                         WHEN category = 'mayorista' AND descripcion LIKE '%L4%' AND precio_mayorista = 154 THEN 17.648
                         WHEN category = 'mayorista' AND descripcion LIKE '%L3%' AND precio_mayorista = 110 THEN 7.736

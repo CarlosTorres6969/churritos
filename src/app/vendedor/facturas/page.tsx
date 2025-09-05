@@ -8,8 +8,9 @@ import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { ArrowLeft, FileText, Eye, Printer, Download, Calendar, X, Search, Loader2, RefreshCw } from "lucide-react"
+import { ArrowLeft, FileText, Eye, Printer, Download, Calendar, X, Search, Loader2 } from "lucide-react"
 import { requireAuth } from "@/lib/auth"
+import { posprinter, type POSPrintOptions, A7_CONFIG } from "@/lib/pos-printer"
 
 interface Factura {
   id_factura: number
@@ -51,44 +52,44 @@ interface UsuarioAutenticado {
 
 // Interface para APIs de impresión POS
 interface POSPrinterAPI {
-  printText?: (text: string) => Promise<boolean>;
-  printReceipt?: (text: string) => Promise<boolean>;
-  getPrinterStatus?: () => Promise<string>;
-  connectPrinter?: () => Promise<boolean>;
-  isConnected?: () => boolean;
+  printText?: (text: string) => Promise<boolean>
+  printReceipt?: (text: string) => Promise<boolean>
+  getPrinterStatus?: () => Promise<string>
+  connectPrinter?: () => Promise<boolean>
+  isConnected?: () => boolean
 }
 
 // Interfaces para APIs específicas de fabricantes
 interface StarWebPrintAPI {
-  print: (commands: { append: string }[]) => void;
+  print: (commands: { append: string }[]) => void
 }
 
 interface EpsonAPI {
-  append: (text: string) => void;
-  print: () => void;
+  append: (text: string) => void
+  print: () => void
 }
 
 // Extender Window para incluir APIs POS
 declare global {
   interface Window {
     POS?: {
-      printer?: POSPrinterAPI;
-    };
-    printerAPI?: POSPrinterAPI;
-    StarWebPrint?: StarWebPrintAPI;
-    Epson?: EpsonAPI;
+      printer?: POSPrinterAPI
+    }
+    printerAPI?: POSPrinterAPI
+    StarWebPrint?: StarWebPrintAPI
+    Epson?: EpsonAPI
     Print?: {
-      printText: (text: string) => void;
-    };
-    bluetoothPrint?: (text: string) => void;
-    printToTerminal?: (text: string) => void;
-    getPrinterStatus?: () => Promise<string>;
-    checkPrinter?: () => Promise<string>;
+      printText: (text: string) => void
+    }
+    bluetoothPrint?: (text: string) => void
+    printToTerminal?: (text: string) => void
+    getPrinterStatus?: () => Promise<string>
+    checkPrinter?: () => Promise<string>
   }
 }
 
 // AbortController para cancelar solicitudes pendientes
-let abortController = new AbortController();
+let abortController = new AbortController()
 
 export default function FacturasVendedor() {
   const [facturas, setFacturas] = useState<Factura[]>([])
@@ -106,194 +107,148 @@ export default function FacturasVendedor() {
   const [terminoBusqueda, setTerminoBusqueda] = useState("")
   const [cargandoFactura, setCargandoFactura] = useState<number | null>(null)
   const [imprimiendo, setImprimiendo] = useState<number | null>(null)
-  const [printerStatus, setPrinterStatus] = useState<string>("Desconocido")
   const router = useRouter()
 
-  const cargarFacturas = useCallback(async (idPersonal: number) => {
-    abortController.abort()
-    abortController = new AbortController()
-    
-    try {
-      setLoading(true)
-      setError("")
-      let url = `/API/Factura?page=${currentPage}&pageSize=10&id_personal=${idPersonal}`
+  const cargarFacturas = useCallback(
+    async (idPersonal: number) => {
+      abortController.abort()
+      abortController = new AbortController()
 
-      if (filtroActivo && fechaInicio && fechaFin) {
-        url += `&fechaInicio=${fechaInicio}&fechaFin=${fechaFin}`
-      }
+      try {
+        setLoading(true)
+        setError("")
+        let url = `/API/Factura?page=${currentPage}&pageSize=10&id_personal=${idPersonal}`
 
-      const response = await fetch(url, { 
-        signal: abortController.signal 
-      })
-      
-      if (!response.ok) {
-        throw new Error(`Error HTTP: ${response.status}`)
-      }
-      
-      const result = await response.json()
+        if (filtroActivo && fechaInicio && fechaFin) {
+          url += `&fechaInicio=${fechaInicio}&fechaFin=${fechaFin}`
+        }
 
-      if (result.success) {
-        setFacturas(result.data.facturas || [])
-        setFacturasFiltradas(result.data.facturas || [])
-        setTotalPages(result.data.pagination?.totalPages || 1)
-      } else {
-        setError(result.error || "Error al cargar facturas")
+        const response = await fetch(url, {
+          signal: abortController.signal,
+        })
+
+        if (!response.ok) {
+          throw new Error(`Error HTTP: ${response.status}`)
+        }
+
+        const result = await response.json()
+
+        if (result.success) {
+          setFacturas(result.data.facturas || [])
+          setFacturasFiltradas(result.data.facturas || [])
+          setTotalPages(result.data.pagination?.totalPages || 1)
+        } else {
+          setError(result.error || "Error al cargar facturas")
+        }
+      } catch (error: unknown) {
+        if (error instanceof Error && error.name === "AbortError") {
+          console.log("Solicitud cancelada")
+        } else {
+          setError("Error de conexión al cargar facturas")
+          console.error("Error:", error)
+        }
+      } finally {
+        setLoading(false)
       }
-    } catch (error: unknown) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        console.log('Solicitud cancelada')
-      } else {
-        setError("Error de conexión al cargar facturas")
-        console.error("Error:", error)
-      }
-    } finally {
-      setLoading(false)
-    }
-  }, [currentPage, filtroActivo, fechaInicio, fechaFin])
+    },
+    [currentPage, filtroActivo, fechaInicio, fechaFin],
+  )
 
   useEffect(() => {
     const obtenerUsuario = () => {
       try {
-        const user = requireAuth();
-        setUsuarioAutenticado(user);
+        const user = requireAuth()
+        setUsuarioAutenticado(user)
       } catch (error) {
-        console.error("Error al obtener el usuario autenticado:", error);
-        router.push("/login");
+        console.error("Error al obtener el usuario autenticado:", error)
+        router.push("/login")
       }
-    };
-    
-    obtenerUsuario();
+    }
+
+    obtenerUsuario()
   }, [router])
 
   useEffect(() => {
     if (usuarioAutenticado && usuarioAutenticado.id_personal) {
-      cargarFacturas(usuarioAutenticado.id_personal);
+      cargarFacturas(usuarioAutenticado.id_personal)
     }
   }, [usuarioAutenticado, currentPage, filtroActivo, fechaInicio, fechaFin, cargarFacturas])
 
   useEffect(() => {
     if (terminoBusqueda) {
-      const termino = terminoBusqueda.toLowerCase();
-      const filtradas = facturas.filter(factura => 
-        factura.numero_factura.toLowerCase().includes(termino) ||
-        factura.nombre_cliente.toLowerCase().includes(termino)
-      );
-      setFacturasFiltradas(filtradas);
+      const termino = terminoBusqueda.toLowerCase()
+      const filtradas = facturas.filter(
+        (factura) =>
+          factura.numero_factura.toLowerCase().includes(termino) ||
+          factura.nombre_cliente.toLowerCase().includes(termino),
+      )
+      setFacturasFiltradas(filtradas)
     } else {
-      setFacturasFiltradas(facturas);
+      setFacturasFiltradas(facturas)
     }
   }, [terminoBusqueda, facturas])
 
-  // Verificar el estado de la impresora
-  const verificarImpresora = useCallback(async (): Promise<boolean> => {
-    try {
-      // Intentar diferentes métodos para verificar la impresora
-      if (window.POS?.printer?.getPrinterStatus) {
-        const status = await window.POS.printer.getPrinterStatus();
-        setPrinterStatus(status);
-        return status === "ready" || status === "connected";
-      }
-      
-      if (window.getPrinterStatus) {
-        const status = await window.getPrinterStatus();
-        setPrinterStatus(status);
-        return status === "ready" || status === "connected";
-      }
-      
-      if (window.printerAPI?.getPrinterStatus) {
-        const status = await window.printerAPI.getPrinterStatus();
-        setPrinterStatus(status);
-        return status === "ready" || status === "connected";
-      }
-      
-      // Si no hay API disponible, asumir que está disponible para impresión genérica
-      setPrinterStatus("Disponible para impresión genérica");
-      return true;
-    } catch (error) {
-      console.error("Error al verificar impresora:", error);
-      setPrinterStatus("Error de verificación");
-      return false;
-    }
-  }, []);
-
-  // Conectar a la impresora si es necesario
-  const conectarImpresora = useCallback(async (): Promise<boolean> => {
-    try {
-      if (window.POS?.printer?.connectPrinter) {
-        return await window.POS.printer.connectPrinter();
-      }
-      
-      if (window.printerAPI?.connectPrinter) {
-        return await window.printerAPI.connectPrinter();
-      }
-      
-      // Si no hay método de conexión, asumir que ya está conectada
-      return true;
-    } catch (error) {
-      console.error("Error al conectar impresora:", error);
-      return false;
-    }
-  }, []);
-
   // Formatear texto para impresión POS
   const formatearParaPOS = (factura: Factura | FacturaDetalle): string => {
-    const lineLength = 42; // Caracteres por línea para la mayoría de impresoras POS
-    
+    const lineLength = 32 // Reducido de 42 a 32 para ISO A7
+
     const centerText = (text: string): string => {
-      if (text.length >= lineLength) return text;
-      const spaces = Math.floor((lineLength - text.length) / 2);
-      return ' '.repeat(spaces) + text;
-    };
-    
-    const line = '='.repeat(lineLength);
-    const dashLine = '-'.repeat(lineLength);
-    
+      if (text.length >= lineLength) return text.substring(0, lineLength)
+      const spaces = Math.floor((lineLength - text.length) / 2)
+      return " ".repeat(spaces) + text
+    }
+
+    const line = "=".repeat(lineLength)
+    const dashLine = "-".repeat(lineLength)
+
     let contenido = `
 ${line}
-${centerText('INVERSIONES MEJIA')}
-${centerText('FACTURA')}
+${centerText("INVERSIONES MEJIA")}
+${centerText("FACTURA")}
 ${line}
-FACTURA: ${factura.numero_factura}
-FECHA:   ${formatearFecha(factura.fecha_emision)}
+FACT: ${factura.numero_factura}
+FECHA: ${formatearFecha(factura.fecha_emision).substring(0, 16)}
 ${dashLine}
-CLIENTE: ${factura.nombre_cliente || "N/A"}
+CLIENTE: ${(factura.nombre_cliente || "N/A").substring(0, lineLength - 9)}
 ${dashLine}
-${'PRODUCTO'.padEnd(28)}CANT  TOTAL
+${"PRODUCTO".padEnd(18)}CANT TOTAL
 ${dashLine}
-`;
-    
+`
+
     if (factura.productos && factura.productos.length > 0) {
-      factura.productos.forEach(p => {
-        const nombre = p.nombre.length > 28 ? p.nombre.substring(0, 25) + '...' : p.nombre;
-        contenido += `${nombre.padEnd(28)}${p.cantidad.toString().padStart(4)}  L.${p.total.toFixed(2)}\n`;
-      });
+      factura.productos.forEach((p) => {
+        const nombre = p.nombre.length > 18 ? p.nombre.substring(0, 15) + "..." : p.nombre
+        const cantStr = p.cantidad.toString().padStart(3)
+        const totalStr = `L.${p.total.toFixed(2)}`
+        contenido += `${nombre.padEnd(18)}${cantStr} ${totalStr}\n`
+      })
     } else {
-      contenido += 'No hay productos registrados\n';
+      contenido += "Sin productos\n"
     }
-    
+
     contenido += `
 ${dashLine}
 TOTAL: L. ${factura.monto_total.toFixed(2)}
 ${dashLine}
-CAI: ${factura.codigo_cai || "N/A"}
+CAI: ${(factura.codigo_cai || "N/A").substring(0, lineLength - 5)}
 ESTADO: ${factura.anulada ? "ANULADA" : "ACTIVA"}
 ${line}
-${centerText('¡Gracias por su compra!')}
+${centerText("Gracias por su compra!")}
 ${line}
-\n\n\n\n\n`; // Avanzar papel para cortar
+\n\n\n\n\n` // Avanzar papel para cortar
 
-    return contenido;
-  };
+    return contenido
+  }
 
   const verFactura = async (factura: Factura) => {
     try {
       setCargandoFactura(factura.id_factura)
       const response = await fetch(`/API/Factura?id_factura=${factura.id_factura}`)
-      
+
       if (!response.ok) {
         throw new Error(`Error HTTP: ${response.status}`)
       }
-      
+
       const result = await response.json()
 
       if (result.success) {
@@ -311,119 +266,139 @@ ${line}
   }
 
   const imprimirFactura = async (factura: Factura | FacturaDetalle) => {
-    setImprimiendo(factura.id_factura);
-    
+    setImprimiendo(factura.id_factura)
+
     try {
-      // Verificar y conectar impresora
-      const conectada = await conectarImpresora();
-      if (!conectada) {
-        throw new Error("No se pudo conectar a la impresora");
+      // Try to connect to POS printer first
+      let printerConnected = false
+
+      // Attempt USB connection
+      printerConnected = await posprinter.initUSB()
+
+      // If USB fails, try Serial/Bluetooth
+      if (!printerConnected) {
+        printerConnected = await posprinter.initSerial()
       }
-      
-      const disponible = await verificarImpresora();
-      if (!disponible) {
-        throw new Error("Impresora no disponible");
+
+      // Format content specifically for A7 POS printers
+      const contenidoPOS = formatearParaPOSA7(factura)
+
+      if (printerConnected) {
+        // Use specialized POS printing
+        const printOptions: POSPrintOptions = {
+          fontSize: "small",
+          alignment: "left",
+          bold: false,
+          cutPaper: true,
+          feedLines: 5,
+          qrCode: `FACT-${factura.numero_factura}-${factura.monto_total}`,
+        }
+
+        const success = await posprinter.printReceipt(contenidoPOS, printOptions)
+
+        if (success) {
+          alert("Factura impresa correctamente en impresora POS")
+          return
+        }
       }
-      
-      // Formatear contenido
-      const contenido = formatearParaPOS(factura);
-      console.log("Contenido para impresión POS:", contenido);
-      
-      let impresionExitosa = false;
-      
+
+      // Fallback to existing methods if POS printer not available
+      const contenido = formatearParaPOS(factura)
+      let impresionExitosa = false
+
       // Intentar con diferentes APIs de impresión POS
       if (window.POS?.printer?.printText) {
         try {
-          impresionExitosa = await window.POS.printer.printText(contenido);
+          impresionExitosa = await window.POS.printer.printText(contenido)
           if (impresionExitosa) {
-            console.log("Impresión exitosa con API POS");
-            alert("Factura impresa correctamente");
+            console.log("Impresión exitosa con API POS")
+            alert("Factura impresa correctamente")
           }
         } catch (error) {
-          console.error("Error con API POS:", error);
+          console.error("Error con API POS:", error)
         }
       }
-      
+
       if (!impresionExitosa && window.printerAPI?.printText) {
         try {
-          impresionExitosa = await window.printerAPI.printText(contenido);
+          impresionExitosa = await window.printerAPI.printText(contenido)
           if (impresionExitosa) {
-            console.log("Impresión exitosa con printerAPI");
-            alert("Factura impresa correctamente");
+            console.log("Impresión exitosa con printerAPI")
+            alert("Factura impresa correctamente")
           }
         } catch (error) {
-          console.error("Error con printerAPI:", error);
+          console.error("Error con printerAPI:", error)
         }
       }
-      
+
       // APIs específicas de fabricantes
       if (!impresionExitosa && window.StarWebPrint) {
         try {
           // Ejemplo para impresoras Star (ajustar según API específica)
-          const commands: { append: string }[] = [];
-          commands.push({ append: contenido });
-          window.StarWebPrint.print(commands);
-          impresionExitosa = true;
-          console.log("Impresión exitosa con StarWebPrint");
-          alert("Factura impresa correctamente");
+          const commands: { append: string }[] = []
+          commands.push({ append: contenido })
+          window.StarWebPrint.print(commands)
+          impresionExitosa = true
+          console.log("Impresión exitosa con StarWebPrint")
+          alert("Factura impresa correctamente")
         } catch (error) {
-          console.error("Error con StarWebPrint:", error);
+          console.error("Error con StarWebPrint:", error)
         }
       }
-      
+
       if (!impresionExitosa && window.Epson) {
         try {
           // Ejemplo para impresoras Epson (ajustar según API específica)
-          window.Epson.append(contenido);
-          window.Epson.print();
-          impresionExitosa = true;
-          console.log("Impresión exitosa con Epson API");
-          alert("Factura impresa correctamente");
+          window.Epson.append(contenido)
+          window.Epson.print()
+          impresionExitosa = true
+          console.log("Impresión exitosa con Epson API")
+          alert("Factura impresa correctamente")
         } catch (error) {
-          console.error("Error con Epson API:", error);
+          console.error("Error con Epson API:", error)
         }
       }
-      
+
       // APIs genéricas (como en el código original)
-      if (!impresionExitosa && typeof window.Print?.printText === 'function') {
+      if (!impresionExitosa && typeof window.Print?.printText === "function") {
         try {
-          window.Print.printText(contenido);
-          impresionExitosa = true;
-          console.log("Impresión exitosa usando API nativa");
-          alert("Factura impresa correctamente");
+          window.Print.printText(contenido)
+          impresionExitosa = true
+          console.log("Impresión exitosa usando API nativa")
+          alert("Factura impresa correctamente")
         } catch (error) {
-          console.error("Error con API nativa:", error);
+          console.error("Error con API nativa:", error)
         }
       }
 
-      if (!impresionExitosa && typeof window.bluetoothPrint === 'function') {
+      if (!impresionExitosa && typeof window.bluetoothPrint === "function") {
         try {
-          window.bluetoothPrint(contenido);
-          impresionExitosa = true;
-          console.log("Impresión exitosa usando Bluetooth");
-          alert("Factura impresa correctamente");
+          window.bluetoothPrint(contenido)
+          impresionExitosa = true
+          console.log("Impresión exitosa usando Bluetooth")
+          alert("Factura impresa correctamente")
         } catch (error) {
-          console.error("Error con Bluetooth:", error);
+          console.error("Error con Bluetooth:", error)
         }
       }
 
-      if (!impresionExitosa && typeof window.printToTerminal === 'function') {
+      if (!impresionExitosa && typeof window.printToTerminal === "function") {
         try {
-          window.printToTerminal(contenido);
-          impresionExitosa = true;
-          console.log("Impresión exitosa en terminal");
-          alert("Factura impresa correctamente");
+          window.printToTerminal(contenido)
+          impresionExitosa = true
+          console.log("Impresión exitosa en terminal")
+          alert("Factura impresa correctamente")
         } catch (error) {
-          console.error("Error con terminal print:", error);
+          console.error("Error con terminal print:", error)
         }
       }
 
-      // Fallback final - impresión por ventana
+      // Enhanced fallback with A7 optimization
       if (!impresionExitosa) {
-        console.log("Usando fallback de impresión estándar");
-        const ventanaImpresion = window.open('', '_blank');
+        console.log("Usando fallback optimizado para A7")
+        const ventanaImpresion = window.open("", "_blank")
         if (!ventanaImpresion) {
-          throw new Error("No se pudo abrir la ventana de impresión. Verifica los bloqueadores de ventanas emergentes.");
+          throw new Error("No se pudo abrir la ventana de impresión. Verifica los bloqueadores de ventanas emergentes.")
         }
 
         ventanaImpresion.document.write(`
@@ -433,28 +408,32 @@ ${line}
               <style>
                 body { 
                   font-family: 'Courier New', monospace; 
-                  font-size: 12px; 
-                  width: 80mm;
+                  font-size: 8px; 
+                  width: ${A7_CONFIG.width}mm;
                   margin: 0;
-                  padding: 2mm;
+                  padding: ${A7_CONFIG.marginLeft}mm;
                   background: white;
+                  line-height: 1.1;
                 }
                 @media print {
                   @page { 
                     margin: 0; 
-                    size: 80mm auto;
+                    size: ${A7_CONFIG.width}mm ${A7_CONFIG.height}mm;
                   }
                   body { 
-                    width: 80mm;
+                    width: ${A7_CONFIG.printableWidth}mm;
+                    font-size: 7px;
                   }
                 }
                 pre {
                   white-space: pre-wrap;
                   word-wrap: break-word;
                   margin: 0;
+                  font-size: inherit;
+                  font-family: inherit;
                 }
                 .print-controls {
-                  margin-top: 10px;
+                  margin-top: 5px;
                   text-align: center;
                 }
                 @media screen {
@@ -467,91 +446,151 @@ ${line}
                     display: none;
                   }
                 }
+                .qr-code {
+                  text-align: center;
+                  margin: 2mm 0;
+                }
               </style>
             </head>
             <body>
-              <pre>${contenido}</pre>
+              <pre>${contenidoPOS}</pre>
+              <div class="qr-code">
+                <small>QR: FACT-${factura.numero_factura}</small>
+              </div>
               <div class="print-controls">
-                <button onclick="window.print()">Imprimir</button>
-                <button onclick="window.close()">Cancelar</button>
+                <button onclick="window.print()" style="font-size: 10px; padding: 2px 4px;">Imprimir A7</button>
+                <button onclick="window.close()" style="font-size: 10px; padding: 2px 4px;">Cancelar</button>
               </div>
               <script>
-                // Intentar imprimir automáticamente
+                // Auto-print for POS workflow
                 setTimeout(function() {
                   window.print();
-                  // Cerrar después de imprimir
                   setTimeout(function() {
                     window.close();
-                  }, 500);
-                }, 500);
+                  }, 1000);
+                }, 800);
               </script>
             </body>
           </html>
-        `);
-        ventanaImpresion.document.close();
-        
-        alert("Ventana de impresión abierta. Use el botón Imprimir en la ventana emergente");
-      }
+        `)
+        ventanaImpresion.document.close()
 
+        alert("Ventana de impresión A7 abierta. Configurada para papel ISO A7 (74mm)")
+      }
     } catch (error) {
-      console.error("Error al imprimir factura:", error);
-      alert("No se pudo imprimir. Verifique la impresora: " + printerStatus);
+      console.error("Error al imprimir factura:", error)
+      const errorMessage = error instanceof Error ? error.message : "Error desconocido"
+      alert("Error de impresión POS: " + errorMessage)
     } finally {
-      setImprimiendo(null);
+      setImprimiendo(null)
+      // Disconnect printer to free resources
+      await posprinter.disconnect()
     }
-  };
+  }
+
+  const formatearParaPOSA7 = (factura: Factura | FacturaDetalle): string => {
+    const lineLength = A7_CONFIG.charactersPerLine
+
+    const centerText = (text: string): string => {
+      if (text.length >= lineLength) return text.substring(0, lineLength)
+      const spaces = Math.floor((lineLength - text.length) / 2)
+      return " ".repeat(spaces) + text
+    }
+
+    const line = "=".repeat(lineLength)
+    const dashLine = "-".repeat(lineLength)
+
+    let contenido = `${line}
+${centerText("INVERSIONES MEJIA")}
+${centerText("FACTURA POS")}
+${line}
+No: ${factura.numero_factura}
+Fecha: ${formatearFecha(factura.fecha_emision).substring(0, 14)}
+${dashLine}
+Cliente:
+${(factura.nombre_cliente || "N/A").substring(0, lineLength)}
+${dashLine}
+PRODUCTO${" ".repeat(Math.max(0, lineLength - 16))}CANT  TOTAL
+${dashLine}`
+
+    if (factura.productos && factura.productos.length > 0) {
+      factura.productos.forEach((p) => {
+        const nombre = p.nombre.length > 20 ? p.nombre.substring(0, 17) + "..." : p.nombre
+        const cantStr = p.cantidad.toString().padStart(2)
+        const totalStr = `${p.total.toFixed(2)}`
+        const espacios = Math.max(1, lineLength - nombre.length - cantStr.length - totalStr.length - 2)
+        contenido += `${nombre}${" ".repeat(espacios)}${cantStr} ${totalStr}\n`
+      })
+    } else {
+      contenido += `${centerText("Sin productos")}\n`
+    }
+
+    contenido += `${dashLine}
+TOTAL: L. ${factura.monto_total.toFixed(2)}
+${dashLine}
+CAI: ${(factura.codigo_cai || "N/A").substring(0, lineLength)}
+Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}
+${line}
+${centerText("Gracias por su compra")}
+${centerText("Sistema POS A7")}
+${line}`
+
+    return contenido
+  }
 
   const descargarFactura = (factura: Factura | FacturaDetalle) => {
-    console.log("Descargando factura:", factura.numero_factura);
-    
-    const contenido = `
-FACTURA: ${factura.numero_factura}
+    console.log("Descargando factura:", factura.numero_factura)
+
+    const contenido = `FACTURA: ${factura.numero_factura}
 FECHA: ${formatearFecha(factura.fecha_emision)}
 CLIENTE: ${factura.nombre_cliente || "N/A"}
-${factura.productos && factura.productos.length > 0 
-  ? factura.productos.map(p => 
-      `${p.nombre} - Cant: ${p.cantidad} - Precio: L.${p.precio_unitario.toFixed(2)} - Total: L.${p.total.toFixed(2)}`
-    ).join('\n')
-  : 'No hay productos'
+${
+  factura.productos && factura.productos.length > 0
+    ? factura.productos
+        .map(
+          (p) =>
+            `${p.nombre} - Cant: ${p.cantidad} - Precio: L.${p.precio_unitario.toFixed(2)} - Total: L.${p.total.toFixed(2)}`,
+        )
+        .join("\n")
+    : "No hay productos"
 }
 TOTAL: L. ${factura.monto_total.toFixed(2)}
 CAI: ${factura.codigo_cai || "N/A"}
-Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}
-    `.trim();
+Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}`.trim()
 
-    const blob = new Blob([contenido], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `factura-${factura.numero_factura}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const blob = new Blob([contenido], { type: "text/plain" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `factura-${factura.numero_factura}.txt`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
   }
 
   const formatearFecha = (fechaString: string) => {
     try {
-      const regex = /(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2}):(\d{2})/;
-      const match = fechaString.match(regex);
-      
+      const regex = /(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2}):(\d{2})/
+      const match = fechaString.match(regex)
+
       if (match) {
-        const [, anio, mes, dia, horas, minutos] = match;
-        return `${dia.padStart(2, '0')}/${mes.padStart(2, '0')}/${anio} ${horas.padStart(2, '0')}:${minutos.padStart(2, '0')}`;
+        const [, anio, mes, dia, horas, minutos] = match
+        return `${dia.padStart(2, "0")}/${mes.padStart(2, "0")}/${anio} ${horas.padStart(2, "0")}:${minutos.padStart(2, "0")}`
       }
-      
-      const fechaSimpleRegex = /(\d{4})-(\d{2})-(\d{2})/;
-      const simpleMatch = fechaString.match(fechaSimpleRegex);
-      
+
+      const fechaSimpleRegex = /(\d{4})-(\d{2})-(\d{2})/
+      const simpleMatch = fechaString.match(fechaSimpleRegex)
+
       if (simpleMatch) {
-        const [, anio, mes, dia] = simpleMatch;
-        return `${dia.padStart(2, '0')}/${mes.padStart(2, '0')}/${anio} 00:00`;
+        const [, anio, mes, dia] = simpleMatch
+        return `${dia.padStart(2, "0")}/${mes.padStart(2, "0")}/${anio} 00:00`
       }
-      
-      return fechaString;
+
+      return fechaString
     } catch (error) {
-      console.error("Error al formatear fecha:", error, fechaString);
-      return fechaString;
+      console.error("Error al formatear fecha:", error, fechaString)
+      return fechaString
     }
   }
 
@@ -608,7 +647,9 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}
                 <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Mis Facturas</h1>
                 <p className="text-xs sm:text-sm text-gray-600">Facturas generadas por mí</p>
                 {usuarioAutenticado && (
-                  <p className="text-xs text-gray-500">Vendedor: {usuarioAutenticado.nombre} {usuarioAutenticado.apellido}</p>
+                  <p className="text-xs text-gray-500">
+                    Vendedor: {usuarioAutenticado.nombre} {usuarioAutenticado.apellido}
+                  </p>
                 )}
               </div>
             </div>
@@ -622,23 +663,6 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
-
-        {/* Tarjeta de estado de impresora */}
-        <Card className="mb-4">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Estado de Impresora</CardTitle>
-            <Printer className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center justify-between">
-              <div className="text-sm">{printerStatus}</div>
-              <Button variant="outline" size="sm" onClick={verificarImpresora}>
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Verificar
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
 
         {/* Buscador */}
         <Card className="mb-4">
@@ -696,7 +720,7 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}
                   Filtrar
                 </Button>
                 {filtroActivo && (
-                  <Button variant="outline" onClick={limpiarFiltro} className="w-full sm:w-auto">
+                  <Button variant="outline" onClick={limpiarFiltro} className="w-full sm:w-auto bg-transparent">
                     <X className="h-4 w-4 mr-2" />
                     Limpiar
                   </Button>
@@ -758,7 +782,10 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}
           <CardContent>
             <div className="space-y-4">
               {facturasFiltradas.map((factura) => (
-                <div key={factura.id_factura} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 border rounded-lg">
+                <div
+                  key={factura.id_factura}
+                  className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 border rounded-lg"
+                >
                   <div className="flex-1 mb-2 sm:mb-0">
                     <div className="flex items-center gap-3 mb-2">
                       <h4 className="font-medium text-sm sm:text-base">{factura.numero_factura}</h4>
@@ -767,24 +794,24 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}
                       </Badge>
                     </div>
                     <p className="text-xs sm:text-sm text-gray-600">{factura.nombre_cliente}</p>
-                    
+
                     {factura.productos && factura.productos.length > 0 && (
                       <div className="mt-2 text-xs text-gray-500">
                         <p className="font-medium">Productos:</p>
                         <div className="ml-2">
                           {factura.productos.slice(0, 2).map((producto, index) => (
                             <div key={index} className="flex justify-between">
-                              <span>{producto.nombre} x {producto.cantidad}</span>
+                              <span>
+                                {producto.nombre} x {producto.cantidad}
+                              </span>
                               <span>L. {producto.total.toFixed(2)}</span>
                             </div>
                           ))}
-                          {factura.productos.length > 2 && (
-                            <p>y {factura.productos.length - 2} más...</p>
-                          )}
+                          {factura.productos.length > 2 && <p>y {factura.productos.length - 2} más...</p>}
                         </div>
                       </div>
                     )}
-                    
+
                     <p className="text-xs text-gray-500 mt-1">{formatearFecha(factura.fecha_emision)}</p>
                     <p className="text-xs text-gray-500">CAI: {factura.codigo_cai}</p>
                   </div>
@@ -792,9 +819,9 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}
                   <div className="flex items-center justify-between w-full sm:w-auto sm:flex-col sm:items-end gap-2 sm:gap-4">
                     <p className="text-base sm:text-lg font-bold sm:mr-4">L. {factura.monto_total.toFixed(2)}</p>
                     <div className="flex gap-1 sm:gap-2">
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
+                      <Button
+                        variant="outline"
+                        size="sm"
                         onClick={() => verFactura(factura)}
                         disabled={cargandoFactura === factura.id_factura}
                       >
@@ -804,9 +831,9 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}
                           <Eye className="h-4 w-4" />
                         )}
                       </Button>
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
+                      <Button
+                        variant="outline"
+                        size="sm"
                         onClick={() => imprimirFactura(factura)}
                         disabled={imprimiendo === factura.id_factura}
                       >
@@ -816,11 +843,7 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}
                           <Printer className="h-4 w-4" />
                         )}
                       </Button>
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        onClick={() => descargarFactura(factura)}
-                      >
+                      <Button variant="outline" size="sm" onClick={() => descargarFactura(factura)}>
                         <Download className="h-4 w-4" />
                       </Button>
                     </div>
@@ -934,15 +957,21 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}
                             <tr key={index} className={index % 2 === 0 ? "bg-white" : "bg-gray-50"}>
                               <td className="p-2">{producto.nombre}</td>
                               <td className="p-2 text-right">{producto.cantidad}</td>
-                              <td className="p-2 text-right hidden sm:table-cell">L. {producto.precio_unitario.toFixed(2)}</td>
+                              <td className="p-2 text-right hidden sm:table-cell">
+                                L. {producto.precio_unitario.toFixed(2)}
+                              </td>
                               <td className="p-2 text-right">L. {producto.total.toFixed(2)}</td>
                             </tr>
                           ))}
                         </tbody>
                         <tfoot className="bg-gray-100">
                           <tr>
-                            <td colSpan={3} className="p-2 text-right font-medium sm:col-span-3">Total:</td>
-                            <td className="p-2 text-right font-medium">L. {facturaSeleccionada.monto_total.toFixed(2)}</td>
+                            <td colSpan={3} className="p-2 text-right font-medium sm:col-span-3">
+                              Total:
+                            </td>
+                            <td className="p-2 text-right font-medium">
+                              L. {facturaSeleccionada.monto_total.toFixed(2)}
+                            </td>
                           </tr>
                         </tfoot>
                       </table>
@@ -951,9 +980,9 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}
                 )}
 
                 <div className="flex flex-col sm:flex-row gap-2 pt-4">
-                  <Button 
-                    variant="outline" 
-                    onClick={() => imprimirFactura(facturaSeleccionada)} 
+                  <Button
+                    variant="outline"
+                    onClick={() => imprimirFactura(facturaSeleccionada)}
                     className="flex-1"
                     disabled={imprimiendo === facturaSeleccionada.id_factura}
                   >
@@ -964,11 +993,7 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}
                     )}
                     Imprimir
                   </Button>
-                  <Button 
-                    variant="outline" 
-                    onClick={() => descargarFactura(facturaSeleccionada)} 
-                    className="flex-1"
-                  >
+                  <Button variant="outline" onClick={() => descargarFactura(facturaSeleccionada)} className="flex-1">
                     <Download className="h-4 w-4 mr-2" />
                     Descargar
                   </Button>
