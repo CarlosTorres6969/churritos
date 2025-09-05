@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
@@ -9,7 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { ArrowLeft, FileText, Eye, Printer, Download, Calendar, X, Search, Loader2 } from "lucide-react"
+import { ArrowLeft, FileText, Eye, Printer, Download, Calendar, X, Search, Loader2, RefreshCw } from "lucide-react"
 import { requireAuth } from "@/lib/auth"
 
 interface Factura {
@@ -50,25 +49,41 @@ interface UsuarioAutenticado {
   apellido: string
 }
 
-// Interface for printer functions that might be available on window
-interface PrinterAPI {
-  Print?: {
-    printText: (text: string) => void;
-  };
-  bluetoothPrint?: (text: string) => void;
-  printToTerminal?: (text: string) => void;
+// Interface para APIs de impresión POS
+interface POSPrinterAPI {
+  printText?: (text: string) => Promise<boolean>;
+  printReceipt?: (text: string) => Promise<boolean>;
   getPrinterStatus?: () => Promise<string>;
-  checkPrinter?: () => Promise<string>;
+  connectPrinter?: () => Promise<boolean>;
+  isConnected?: () => boolean;
 }
 
-// Extend Window interface to include printer functions
+// Interfaces para APIs específicas de fabricantes
+interface StarWebPrintAPI {
+  print: (commands: { append: string }[]) => void;
+}
+
+interface EpsonAPI {
+  append: (text: string) => void;
+  print: () => void;
+}
+
+// Extender Window para incluir APIs POS
 declare global {
   interface Window {
-    Print?: PrinterAPI['Print'];
-    bluetoothPrint?: PrinterAPI['bluetoothPrint'];
-    printToTerminal?: PrinterAPI['printToTerminal'];
-    getPrinterStatus?: PrinterAPI['getPrinterStatus'];
-    checkPrinter?: PrinterAPI['checkPrinter'];
+    POS?: {
+      printer?: POSPrinterAPI;
+    };
+    printerAPI?: POSPrinterAPI;
+    StarWebPrint?: StarWebPrintAPI;
+    Epson?: EpsonAPI;
+    Print?: {
+      printText: (text: string) => void;
+    };
+    bluetoothPrint?: (text: string) => void;
+    printToTerminal?: (text: string) => void;
+    getPrinterStatus?: () => Promise<string>;
+    checkPrinter?: () => Promise<string>;
   }
 }
 
@@ -91,6 +106,7 @@ export default function FacturasVendedor() {
   const [terminoBusqueda, setTerminoBusqueda] = useState("")
   const [cargandoFactura, setCargandoFactura] = useState<number | null>(null)
   const [imprimiendo, setImprimiendo] = useState<number | null>(null)
+  const [printerStatus, setPrinterStatus] = useState<string>("Desconocido")
   const router = useRouter()
 
   const cargarFacturas = useCallback(async (idPersonal: number) => {
@@ -168,6 +184,107 @@ export default function FacturasVendedor() {
     }
   }, [terminoBusqueda, facturas])
 
+  // Verificar el estado de la impresora
+  const verificarImpresora = useCallback(async (): Promise<boolean> => {
+    try {
+      // Intentar diferentes métodos para verificar la impresora
+      if (window.POS?.printer?.getPrinterStatus) {
+        const status = await window.POS.printer.getPrinterStatus();
+        setPrinterStatus(status);
+        return status === "ready" || status === "connected";
+      }
+      
+      if (window.getPrinterStatus) {
+        const status = await window.getPrinterStatus();
+        setPrinterStatus(status);
+        return status === "ready" || status === "connected";
+      }
+      
+      if (window.printerAPI?.getPrinterStatus) {
+        const status = await window.printerAPI.getPrinterStatus();
+        setPrinterStatus(status);
+        return status === "ready" || status === "connected";
+      }
+      
+      // Si no hay API disponible, asumir que está disponible para impresión genérica
+      setPrinterStatus("Disponible para impresión genérica");
+      return true;
+    } catch (error) {
+      console.error("Error al verificar impresora:", error);
+      setPrinterStatus("Error de verificación");
+      return false;
+    }
+  }, []);
+
+  // Conectar a la impresora si es necesario
+  const conectarImpresora = useCallback(async (): Promise<boolean> => {
+    try {
+      if (window.POS?.printer?.connectPrinter) {
+        return await window.POS.printer.connectPrinter();
+      }
+      
+      if (window.printerAPI?.connectPrinter) {
+        return await window.printerAPI.connectPrinter();
+      }
+      
+      // Si no hay método de conexión, asumir que ya está conectada
+      return true;
+    } catch (error) {
+      console.error("Error al conectar impresora:", error);
+      return false;
+    }
+  }, []);
+
+  // Formatear texto para impresión POS
+  const formatearParaPOS = (factura: Factura | FacturaDetalle): string => {
+    const lineLength = 42; // Caracteres por línea para la mayoría de impresoras POS
+    
+    const centerText = (text: string): string => {
+      if (text.length >= lineLength) return text;
+      const spaces = Math.floor((lineLength - text.length) / 2);
+      return ' '.repeat(spaces) + text;
+    };
+    
+    const line = '='.repeat(lineLength);
+    const dashLine = '-'.repeat(lineLength);
+    
+    let contenido = `
+${line}
+${centerText('INVERSIONES MEJIA')}
+${centerText('FACTURA')}
+${line}
+FACTURA: ${factura.numero_factura}
+FECHA:   ${formatearFecha(factura.fecha_emision)}
+${dashLine}
+CLIENTE: ${factura.nombre_cliente || "N/A"}
+${dashLine}
+${'PRODUCTO'.padEnd(28)}CANT  TOTAL
+${dashLine}
+`;
+    
+    if (factura.productos && factura.productos.length > 0) {
+      factura.productos.forEach(p => {
+        const nombre = p.nombre.length > 28 ? p.nombre.substring(0, 25) + '...' : p.nombre;
+        contenido += `${nombre.padEnd(28)}${p.cantidad.toString().padStart(4)}  L.${p.total.toFixed(2)}\n`;
+      });
+    } else {
+      contenido += 'No hay productos registrados\n';
+    }
+    
+    contenido += `
+${dashLine}
+TOTAL: L. ${factura.monto_total.toFixed(2)}
+${dashLine}
+CAI: ${factura.codigo_cai || "N/A"}
+ESTADO: ${factura.anulada ? "ANULADA" : "ACTIVA"}
+${line}
+${centerText('¡Gracias por su compra!')}
+${line}
+\n\n\n\n\n`; // Avanzar papel para cortar
+
+    return contenido;
+  };
+
   const verFactura = async (factura: Factura) => {
     try {
       setCargandoFactura(factura.id_factura)
@@ -195,48 +312,85 @@ export default function FacturasVendedor() {
 
   const imprimirFactura = async (factura: Factura | FacturaDetalle) => {
     setImprimiendo(factura.id_factura);
+    
     try {
-      const contenido = `
-${'='.repeat(32)}
-      INVERSIONES MEJIA
-${'='.repeat(32)}
-FACTURA: ${factura.numero_factura}
-FECHA: ${formatearFecha(factura.fecha_emision)}
-${'-'.repeat(32)}
-CLIENTE: ${factura.nombre_cliente || "N/A"}
-${'-'.repeat(32)}
-${'Producto'.padEnd(16)}Cant  Total
-${'-'.repeat(32)}
-${factura.productos && factura.productos.length > 0 
-  ? factura.productos.map(p => 
-      `${p.nombre.substring(0, 16).padEnd(16)}${p.cantidad.toString().padStart(3)}  L.${p.total.toFixed(2)}`
-    ).join('\n')
-  : 'No hay productos'
-}
-${'-'.repeat(32)}
-TOTAL: L. ${factura.monto_total.toFixed(2)}
-${'-'.repeat(32)}
-CAI: ${factura.codigo_cai || "N/A"}
-Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}
-${'='.repeat(32)}
-¡Gracias por su compra!
-      `.trim();
-
-      console.log("Contenido para impresión:", contenido);
-
+      // Verificar y conectar impresora
+      const conectada = await conectarImpresora();
+      if (!conectada) {
+        throw new Error("No se pudo conectar a la impresora");
+      }
+      
+      const disponible = await verificarImpresora();
+      if (!disponible) {
+        throw new Error("Impresora no disponible");
+      }
+      
+      // Formatear contenido
+      const contenido = formatearParaPOS(factura);
+      console.log("Contenido para impresión POS:", contenido);
+      
       let impresionExitosa = false;
-
-      if (typeof window.Print !== 'undefined' && window.Print?.printText) {
+      
+      // Intentar con diferentes APIs de impresión POS
+      if (window.POS?.printer?.printText) {
         try {
-          if (window.getPrinterStatus) {
-            const status = await window.getPrinterStatus();
-            if (status !== 'ready') {
-              throw new Error(`Impresora no lista: ${status}`);
-            }
+          impresionExitosa = await window.POS.printer.printText(contenido);
+          if (impresionExitosa) {
+            console.log("Impresión exitosa con API POS");
+            alert("Factura impresa correctamente");
           }
+        } catch (error) {
+          console.error("Error con API POS:", error);
+        }
+      }
+      
+      if (!impresionExitosa && window.printerAPI?.printText) {
+        try {
+          impresionExitosa = await window.printerAPI.printText(contenido);
+          if (impresionExitosa) {
+            console.log("Impresión exitosa con printerAPI");
+            alert("Factura impresa correctamente");
+          }
+        } catch (error) {
+          console.error("Error con printerAPI:", error);
+        }
+      }
+      
+      // APIs específicas de fabricantes
+      if (!impresionExitosa && window.StarWebPrint) {
+        try {
+          // Ejemplo para impresoras Star (ajustar según API específica)
+          const commands: { append: string }[] = [];
+          commands.push({ append: contenido });
+          window.StarWebPrint.print(commands);
+          impresionExitosa = true;
+          console.log("Impresión exitosa con StarWebPrint");
+          alert("Factura impresa correctamente");
+        } catch (error) {
+          console.error("Error con StarWebPrint:", error);
+        }
+      }
+      
+      if (!impresionExitosa && window.Epson) {
+        try {
+          // Ejemplo para impresoras Epson (ajustar según API específica)
+          window.Epson.append(contenido);
+          window.Epson.print();
+          impresionExitosa = true;
+          console.log("Impresión exitosa con Epson API");
+          alert("Factura impresa correctamente");
+        } catch (error) {
+          console.error("Error con Epson API:", error);
+        }
+      }
+      
+      // APIs genéricas (como en el código original)
+      if (!impresionExitosa && typeof window.Print?.printText === 'function') {
+        try {
           window.Print.printText(contenido);
           impresionExitosa = true;
           console.log("Impresión exitosa usando API nativa");
+          alert("Factura impresa correctamente");
         } catch (error) {
           console.error("Error con API nativa:", error);
         }
@@ -244,15 +398,10 @@ ${'='.repeat(32)}
 
       if (!impresionExitosa && typeof window.bluetoothPrint === 'function') {
         try {
-          if (window.checkPrinter) {
-            const status = await window.checkPrinter();
-            if (status !== 'connected') {
-              throw new Error(`Impresora Bluetooth no conectada: ${status}`);
-            }
-          }
           window.bluetoothPrint(contenido);
           impresionExitosa = true;
           console.log("Impresión exitosa usando Bluetooth");
+          alert("Factura impresa correctamente");
         } catch (error) {
           console.error("Error con Bluetooth:", error);
         }
@@ -263,16 +412,18 @@ ${'='.repeat(32)}
           window.printToTerminal(contenido);
           impresionExitosa = true;
           console.log("Impresión exitosa en terminal");
+          alert("Factura impresa correctamente");
         } catch (error) {
           console.error("Error con terminal print:", error);
         }
       }
 
+      // Fallback final - impresión por ventana
       if (!impresionExitosa) {
         console.log("Usando fallback de impresión estándar");
         const ventanaImpresion = window.open('', '_blank');
         if (!ventanaImpresion) {
-          throw new Error("No se pudo abrir la ventana de impresión");
+          throw new Error("No se pudo abrir la ventana de impresión. Verifica los bloqueadores de ventanas emergentes.");
         }
 
         ventanaImpresion.document.write(`
@@ -283,7 +434,7 @@ ${'='.repeat(32)}
                 body { 
                   font-family: 'Courier New', monospace; 
                   font-size: 12px; 
-                  width: 58mm;
+                  width: 80mm;
                   margin: 0;
                   padding: 2mm;
                   background: white;
@@ -291,19 +442,30 @@ ${'='.repeat(32)}
                 @media print {
                   @page { 
                     margin: 0; 
-                    size: 58mm auto;
+                    size: 80mm auto;
                   }
                   body { 
-                    width: 58mm;
+                    width: 80mm;
                   }
                 }
                 pre {
                   white-space: pre-wrap;
                   word-wrap: break-word;
+                  margin: 0;
                 }
                 .print-controls {
                   margin-top: 10px;
                   text-align: center;
+                }
+                @media screen {
+                  .print-controls {
+                    display: block;
+                  }
+                }
+                @media print {
+                  .print-controls {
+                    display: none;
+                  }
                 }
               </style>
             </head>
@@ -313,31 +475,27 @@ ${'='.repeat(32)}
                 <button onclick="window.print()">Imprimir</button>
                 <button onclick="window.close()">Cancelar</button>
               </div>
+              <script>
+                // Intentar imprimir automáticamente
+                setTimeout(function() {
+                  window.print();
+                  // Cerrar después de imprimir
+                  setTimeout(function() {
+                    window.close();
+                  }, 500);
+                }, 500);
+              </script>
             </body>
           </html>
         `);
         ventanaImpresion.document.close();
-
-        ventanaImpresion.addEventListener('afterprint', () => {
-          console.log("Impresión completada en ventana estándar");
-          ventanaImpresion.close();
-          impresionExitosa = true;
-        });
-
-        ventanaImpresion.addEventListener('unload', () => {
-          if (!impresionExitosa) {
-            console.log("Impresión cancelada por el usuario");
-          }
-        });
-      }
-
-      if (!impresionExitosa) {
-        throw new Error("No se pudo acceder a ningún método de impresión");
+        
+        alert("Ventana de impresión abierta. Use el botón Imprimir en la ventana emergente");
       }
 
     } catch (error) {
       console.error("Error al imprimir factura:", error);
-      alert("Error al imprimir. Verifique que la impresora esté conectada y encendida.");
+      alert("No se pudo imprimir. Verifique la impresora: " + printerStatus);
     } finally {
       setImprimiendo(null);
     }
@@ -464,6 +622,23 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
+
+        {/* Tarjeta de estado de impresora */}
+        <Card className="mb-4">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Estado de Impresora</CardTitle>
+            <Printer className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between">
+              <div className="text-sm">{printerStatus}</div>
+              <Button variant="outline" size="sm" onClick={verificarImpresora}>
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Verificar
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Buscador */}
         <Card className="mb-4">
