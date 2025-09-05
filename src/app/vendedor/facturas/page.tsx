@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input"
 import { ArrowLeft, FileText, Eye, Printer, Download, Calendar, X, Search, Loader2 } from "lucide-react"
 import { requireAuth } from "@/lib/auth"
 import { posprinter, type POSPrintOptions, A7_CONFIG } from "@/lib/pos-printer"
+import jsPDF from "jspdf"
 
 interface Factura {
   id_factura: number
@@ -265,11 +266,65 @@ ${line}
     }
   }
 
+  const generarPDF = async (factura: Factura | FacturaDetalle, contenidoPOS: string) => {
+    const doc = new jsPDF({
+      orientation: "portrait",
+      unit: "mm",
+      format: [A7_CONFIG.width, A7_CONFIG.height],
+    })
+
+    // Configurar fuente monospaced para emular salida de impresora POS
+    doc.setFont("Courier")
+    doc.setFontSize(8)
+
+    // Dividir el contenido en líneas
+    const lines = contenidoPOS.split("\n")
+    let y = 5 // Margen superior inicial
+
+    lines.forEach((line) => {
+      if (line.trim()) {
+        doc.text(line, A7_CONFIG.marginLeft, y)
+        y += 3 // Espaciado entre líneas ajustado para A7
+      }
+    })
+
+    // Agregar código QR si es necesario
+    if (`FACT-${factura.numero_factura}-${factura.monto_total}`) {
+      const qrData = `FACT-${factura.numero_factura}-${factura.monto_total}`
+      const qrSize = 20 // Tamaño del QR en mm
+      const qrX = (A7_CONFIG.width - qrSize) / 2 // Centrar el QR
+      try {
+        const qrDataURL = await posprinter.generateQRCode(qrData)
+        if (qrDataURL) {
+          doc.addImage(qrDataURL, "PNG", qrX, y, qrSize, qrSize)
+          y += qrSize + 2
+        }
+      } catch (error) {
+        console.error("Error al generar el código QR para el PDF:", error)
+      }
+    }
+
+    // Guardar el PDF
+    doc.save(`factura-${factura.numero_factura}.pdf`)
+  }
+
   const imprimirFactura = async (factura: Factura | FacturaDetalle) => {
     setImprimiendo(factura.id_factura)
 
     try {
-      // Try to connect to POS printer first
+      // Generar contenido para POS
+      const contenidoPOS = formatearParaPOSA7(factura)
+
+      // Generar y descargar PDF
+      try {
+        await generarPDF(factura, contenidoPOS)
+        alert("PDF generado y descargado para impresión en POS")
+      } catch (pdfError) {
+        console.error("Error al generar PDF:", pdfError)
+        alert("Error al generar PDF: " + (pdfError instanceof Error ? pdfError.message : "Error desconocido"))
+      }
+
+      // Intentar conexión con impresora POS
       let printerConnected = false
 
       // Attempt USB connection
@@ -280,11 +335,8 @@ ${line}
         printerConnected = await posprinter.initSerial()
       }
 
-      // Format content specifically for A7 POS printers
-      const contenidoPOS = formatearParaPOSA7(factura)
-
       if (printerConnected) {
-        // Use specialized POS printing
+        // Usar impresión directa si está disponible
         const printOptions: POSPrintOptions = {
           fontSize: "small",
           alignment: "left",
@@ -302,7 +354,7 @@ ${line}
         }
       }
 
-      // Fallback to existing methods if POS printer not available
+      // Fallback a métodos de impresión existentes si la impresión directa falla
       const contenido = formatearParaPOS(factura)
       let impresionExitosa = false
 
@@ -334,7 +386,6 @@ ${line}
       // APIs específicas de fabricantes
       if (!impresionExitosa && window.StarWebPrint) {
         try {
-          // Ejemplo para impresoras Star (ajustar según API específica)
           const commands: { append: string }[] = []
           commands.push({ append: contenido })
           window.StarWebPrint.print(commands)
@@ -348,7 +399,6 @@ ${line}
 
       if (!impresionExitosa && window.Epson) {
         try {
-          // Ejemplo para impresoras Epson (ajustar según API específica)
           window.Epson.append(contenido)
           window.Epson.print()
           impresionExitosa = true
@@ -359,7 +409,7 @@ ${line}
         }
       }
 
-      // APIs genéricas (como en el código original)
+      // APIs genéricas
       if (!impresionExitosa && typeof window.Print?.printText === "function") {
         try {
           window.Print.printText(contenido)
@@ -393,7 +443,7 @@ ${line}
         }
       }
 
-      // Enhanced fallback with A7 optimization
+      // Fallback a ventana de impresión si todo lo demás falla
       if (!impresionExitosa) {
         console.log("Usando fallback optimizado para A7")
         const ventanaImpresion = window.open("", "_blank")
@@ -475,7 +525,7 @@ ${line}
         `)
         ventanaImpresion.document.close()
 
-        alert("Ventana de impresión A7 abierta. Configurada para papel ISO A7 (74mm)")
+        alert("Ventana de impresión A7 abierta como respaldo. PDF ya descargado.")
       }
     } catch (error) {
       console.error("Error al imprimir factura:", error)
@@ -483,7 +533,6 @@ ${line}
       alert("Error de impresión POS: " + errorMessage)
     } finally {
       setImprimiendo(null)
-      // Disconnect printer to free resources
       await posprinter.disconnect()
     }
   }
