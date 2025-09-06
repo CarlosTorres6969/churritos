@@ -464,12 +464,12 @@ ${line}
           <style>
             body { 
               font-family: 'Courier New', monospace; 
-              font-size: 8px; 
+              font-size: 12px; 
               width: ${A7_CONFIG.width}mm;
               margin: 0;
               padding: ${A7_CONFIG.marginLeft}mm;
               background: white;
-              line-height: 1.2;
+              line-height: 1.4;
             }
             @media print {
               @page { 
@@ -478,7 +478,7 @@ ${line}
               }
               body { 
                 width: ${A7_CONFIG.printableWidth}mm;
-                font-size: 7px;
+                font-size: 11px;
               }
             }
             pre {
@@ -489,7 +489,7 @@ ${line}
               font-family: inherit;
             }
             .print-controls {
-              margin-top: 5px;
+              margin-top: 8px;
               text-align: center;
             }
             @media screen {
@@ -504,34 +504,43 @@ ${line}
             }
             .qr-code {
               text-align: center;
-              margin: 2mm 0;
+              margin: 3mm 0;
             }
             .qr-code img {
               width: 20mm;
               height: 20mm;
             }
             .status-message {
-              padding: 10px;
-              margin: 10px 0;
+              padding: 12px;
+              margin: 12px 0;
               border-radius: 5px;
               background-color: #f8f9fa;
               border-left: 4px solid #ffc107;
+              font-size: 11px;
+            }
+            .status-message strong {
+              font-size: 12px;
+            }
+            .print-controls button {
+              font-size: 14px;
+              padding: 6px 10px;
+              margin-right: 10px;
             }
           </style>
         </head>
         <body>
           <div class="status-message">
-            <strong>Modo Vista Previa</strong><br>
-            No se detectó una impresora POS conectada.<br>
-            Use esta vista para imprimir en cualquier impresora configurada en su sistema.
+            <strong></strong><br>
+            .<br>
+            .
           </div>
           <pre>${contenido}</pre>
           <div class="qr-code">
             ${qrDataURL ? `<img src="${qrDataURL}" alt="QR Code" />` : `<small>QR: FACT-${factura.numero_factura}</small>`}
           </div>
           <div class="print-controls">
-            <button onclick="window.print()" style="font-size: 10px; padding: 4px 8px; margin-right: 8px;">Imprimir en POS</button>
-            <button onclick="window.close()" style="font-size: 10px; padding: 4px 8px;">Cancelar</button>
+            <button onclick="window.print()">Imprimir en POS</button>
+            <button onclick="window.close()">Cancelar</button>
           </div>
           <script>
             // Intentar imprimir automáticamente si está en un entorno específico
