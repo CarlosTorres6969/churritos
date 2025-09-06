@@ -137,7 +137,7 @@ export default function FacturasVendedor() {
         setLoading(false)
       }
     },
-    [currentPage, filtroActivo, fechaInicio, fechaFin],
+    [currentPage, filtroActivo, fechaInicio, fechaFin, datosEjemplo], // Añadida la dependencia datosEjemplo
   )
 
   useEffect(() => {
@@ -251,11 +251,67 @@ ${line}`
     }
   }
 
+  const imprimirDirectamente = (contenido: string) => {
+    // Crear un iframe oculto para la impresión
+    const iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
+    document.body.appendChild(iframe);
+    
+    const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+    
+    if (iframeDoc) {
+      iframeDoc.open();
+      iframeDoc.write(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Impresión Factura</title>
+            <style>
+              @media print {
+                body {
+                  width: 74mm;
+                  margin: 0;
+                  padding: 0;
+                  font-family: 'Courier New', monospace;
+                  font-size: 8px;
+                  line-height: 1.1;
+                }
+              }
+              pre {
+                white-space: pre-wrap;
+                word-wrap: break-word;
+                margin: 0;
+              }
+            </style>
+          </head>
+          <body>
+            <pre>${contenido}</pre>
+            <script>
+              window.onload = function() {
+                window.print();
+                setTimeout(function() {
+                  window.close();
+                }, 100);
+              }
+            </script>
+          </body>
+        </html>
+      `);
+      iframeDoc.close();
+    }
+    
+    // Eliminar el iframe después de un tiempo
+    setTimeout(() => {
+      document.body.removeChild(iframe);
+    }, 1000);
+  }
+
   const mostrarVistaPreviaImpresion = (factura: Factura | FacturaDetalle, contenidoPOS: string) => {
     const ventanaImpresion = window.open("", "_blank")
     if (!ventanaImpresion) {
-      alert("No se pudo abrir la ventana de impresión. Verifica los bloqueadores de ventanas emergentes.")
-      return
+      // Si no se puede abrir ventana, intentar imprimir directamente
+      imprimirDirectamente(contenidoPOS);
+      return;
     }
 
     ventanaImpresion.document.write(`
@@ -302,12 +358,6 @@ ${line}`
                 margin-top: 0;
                 color: #856404;
               }
-              .instructions ol {
-                padding-left: 20px;
-              }
-              .instructions li {
-                margin-bottom: 8px;
-              }
             }
             pre {
               white-space: pre-wrap;
@@ -335,11 +385,6 @@ ${line}`
               color: #0c5460;
               border: 1px solid #bee5eb;
             }
-            .warning {
-              background-color: #fff3cd;
-              color: #856404;
-              border: 1px solid #ffeaa7;
-            }
             button {
               padding: 10px 20px;
               margin: 0 10px;
@@ -353,12 +398,6 @@ ${line}`
             button:hover {
               background-color: #0056b3;
             }
-            .button-secondary {
-              background-color: #6c757d;
-            }
-            .button-secondary:hover {
-              background-color: #545b62;
-            }
           </style>
         </head>
         <body>
@@ -368,25 +407,10 @@ ${line}`
             </div>
             
             <div class="instructions">
-              <h3>Instrucciones para configurar la impresión:</h3>
-              <ol>
-                <li>Haga clic en el botón "Imprimir"</li>
-                <li>En el diálogo de impresión, seleccione su impresora POS</li>
-                <li>Configure las opciones de impresión:
-                  <ul>
-                    <li><strong>Tamaño de papel:</strong> Personalizado (74mm x 105mm)</li>
-                    <li><strong>Orientación:</strong> Vertical</li>
-                    <li><strong>Márgenes:</strong> Ninguno o Mínimos</li>
-                    <li><strong>Escala:</strong> 100% (sin ajuste)</li>
-                  </ul>
-                </li>
-                <li>Haga clic en "Imprimir"</li>
-              </ol>
-              <p><strong>Nota:</strong> Asegúrese de que la impresora POS tenga papel de 80mm de ancho (el estándar para impresoras térmicas)</p>
-            </div>
-
-            <div class="status-message warning">
-              <p><strong>No se detectó una impresora POS compatible.</strong> Use la impresión del navegador y seleccione manualmente su impresora.</p>
+              <h3>Para imprimir directamente en su impresora POS:</h3>
+              <p>1. Haga clic en el botón "Imprimir"</p>
+              <p>2. Seleccione su impresora POS en el diálogo de impresión</p>
+              <p>3. Asegúrese de que la impresora esté encendida y con papel</p>
             </div>
           </div>
           
@@ -396,14 +420,14 @@ ${line}`
           
           <div class="print-controls no-print">
             <button onclick="window.print()">Imprimir</button>
-            <button onclick="window.close()" class="button-secondary">Cerrar</button>
+            <button onclick="window.close()" style="background-color: #6c757d;">Cerrar</button>
           </div>
           
           <script>
-            // Auto-focus en el botón de imprimir
+            // Intentar imprimir automáticamente después de un breve retraso
             setTimeout(function() {
-              window.focus();
-            }, 100);
+              window.print();
+            }, 500);
           </script>
         </body>
       </html>
@@ -418,8 +442,13 @@ ${line}`
       // Generar contenido para POS
       const contenidoPOS = formatearParaPOSA7(factura)
       
-      // Mostrar vista previa para impresión
-      mostrarVistaPreviaImpresion(factura, contenidoPOS)
+      // Intentar imprimir directamente
+      imprimirDirectamente(contenidoPOS);
+      
+      // También mostrar vista previa como respaldo
+      setTimeout(() => {
+        mostrarVistaPreviaImpresion(factura, contenidoPOS);
+      }, 300);
       
     } catch (error) {
       console.error("Error al imprimir factura:", error)
@@ -556,6 +585,40 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}`.trim()
           </Alert>
         )}
 
+        {/* Configuración de impresora */}
+        <Card className="mb-4">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
+              <Printer className="h-4 w-4 sm:h-5 sm:w-5" />
+              Configuración de Impresión
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col gap-3">
+              <p className="text-sm text-gray-600">
+                Para imprimir facturas en su impresora POS, asegúrese de:
+              </p>
+              <ul className="text-sm text-gray-600 list-disc pl-5">
+                <li>Tener la impresora POS conectada y encendida</li>
+                <li>Seleccionar la impresora POS en el diálogo de impresión</li>
+                <li>Configurar el tamaño de papel a 74mm de ancho</li>
+              </ul>
+              <Button 
+                onClick={() => {
+                  // Probar impresión con un ejemplo
+                  const facturaEjemplo = datosEjemplo[0];
+                  const contenido = formatearParaPOSA7(facturaEjemplo);
+                  imprimirDirectamente(contenido);
+                }}
+                className="mt-2"
+              >
+                <Printer className="h-4 w-4 mr-2" />
+                Probar Impresión
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Buscador */}
         <Card className="mb-4">
           <CardHeader>
@@ -569,7 +632,7 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}`.trim()
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
               <Input
                 type="text"
-                placeholder="Buscar por número de factura o nombre de cliente..."
+                placeholder="Buscar por número de factura or nombre de cliente..."
                 value={terminoBusqueda}
                 onChange={(e) => setTerminoBusqueda(e.target.value)}
                 className="pl-10 text-sm"
