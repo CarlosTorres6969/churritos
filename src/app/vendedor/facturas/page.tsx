@@ -266,250 +266,302 @@ ${line}
   }
 
   const imprimirFactura = async (factura: Factura | FacturaDetalle) => {
-    setImprimiendo(factura.id_factura)
+    setImprimiendo(factura.id_factura);
 
     try {
       // Generar contenido para POS en formato ISO A7
-      const contenidoPOS = formatearParaPOSA7(factura)
-
-      // Intentar conexión con impresora POS
-      let printerConnected = false
-
-      // Intento de conexión USB
-      try {
-        printerConnected = await posprinter.initUSB()
-        if (printerConnected) {
-          console.log("Conexión USB establecida")
-        }
-      } catch (usbError) {
-        console.error("Error en conexión USB:", usbError)
+      const contenidoPOS = formatearParaPOSA7(factura);
+      
+      // Verificar disponibilidad de APIs de impresión
+      const apisDisponibles = detectarAPIsImpresion();
+      
+      if (apisDisponibles.length === 0) {
+        // No hay APIs de impresión disponibles, usar vista previa
+        await mostrarVistaPreviaA7(factura, contenidoPOS);
+        return;
       }
 
-      // Si falla USB, intentar Serial/Bluetooth
-      if (!printerConnected) {
+      // Intentar con cada API disponible
+      let impresionExitosa = false;
+      
+      for (const api of apisDisponibles) {
         try {
-          printerConnected = await posprinter.initSerial()
-          if (printerConnected) {
-            console.log("Conexión Serial/Bluetooth establecida")
+          switch (api) {
+            case 'usb':
+              impresionExitosa = await intentarImpresionUSB(contenidoPOS);
+              break;
+            case 'serial':
+              impresionExitosa = await intentarImpresionSerial(contenidoPOS);
+              break;
+            case 'posPrinter':
+              impresionExitosa = await intentarImpresionPOS(contenidoPOS, factura);
+              break;
+            case 'starWebPrint':
+              impresionExitosa = await intentarImpresionStar(contenidoPOS);
+              break;
+            case 'epson':
+              impresionExitosa = await intentarImpresionEpson(contenidoPOS);
+              break;
+            case 'printerAPI':
+              impresionExitosa = await intentarImpresionAPI(contenidoPOS);
+              break;
           }
-        } catch (serialError) {
-          console.error("Error en conexión Serial/Bluetooth:", serialError)
-        }
-      }
-
-      if (printerConnected) {
-        // Usar impresión directa si está disponible
-        const printOptions: POSPrintOptions = {
-          fontSize: "small",
-          alignment: "left",
-          bold: false,
-          cutPaper: true,
-          feedLines: 3,
-          qrCode: `FACT-${factura.numero_factura}-${factura.monto_total}`,
-        }
-
-        try {
-          const success = await posprinter.printReceipt(contenidoPOS, printOptions)
-          if (success) {
-            alert("Factura impresa correctamente en la impresora POS")
-            return
-          } else {
-            throw new Error("Fallo en la impresión directa en POS")
-          }
-        } catch (printError) {
-          console.error("Error al imprimir en POS:", printError)
-        }
-      }
-
-      // Fallback a métodos de impresión alternativos
-      let impresionExitosa = false
-
-      // Intentar con APIs de impresión POS
-      if (window.POS?.printer?.printText) {
-        try {
-          impresionExitosa = await window.POS.printer.printText(contenidoPOS)
+          
           if (impresionExitosa) {
-            console.log("Impresión exitosa con API POS")
-            alert("Factura impresa correctamente")
-            return
+            alert("Factura impresa correctamente");
+            return;
           }
         } catch (error) {
-          console.error("Error con API POS:", error)
+          console.error(`Error con API ${api}:`, error);
+          // Continuar con la siguiente API
         }
       }
 
-      if (!impresionExitosa && window.printerAPI?.printText) {
-        try {
-          impresionExitosa = await window.printerAPI.printText(contenidoPOS)
-          if (impresionExitosa) {
-            console.log("Impresión exitosa con printerAPI")
-            alert("Factura impresa correctamente")
-            return
-          }
-        } catch (error) {
-          console.error("Error con printerAPI:", error)
-        }
-      }
-
-      // APIs específicas de fabricantes
-      if (!impresionExitosa && window.StarWebPrint) {
-        try {
-          const commands: { append: string }[] = [{ append: contenidoPOS }]
-          window.StarWebPrint.print(commands)
-          impresionExitosa = true
-          console.log("Impresión exitosa con StarWebPrint")
-          alert("Factura impresa correctamente")
-          return
-        } catch (error) {
-          console.error("Error con StarWebPrint:", error)
-        }
-      }
-
-      if (!impresionExitosa && window.Epson) {
-        try {
-          window.Epson.append(contenidoPOS)
-          window.Epson.print()
-          impresionExitosa = true
-          console.log("Impresión exitosa con Epson API")
-          alert("Factura impresa correctamente")
-          return
-        } catch (error) {
-          console.error("Error con Epson API:", error)
-        }
-      }
-
-      // APIs genéricas
-      if (!impresionExitosa && typeof window.Print?.printText === "function") {
-        try {
-          window.Print.printText(contenidoPOS)
-          impresionExitosa = true
-          console.log("Impresión exitosa usando API nativa")
-          alert("Factura impresa correctamente")
-          return
-        } catch (error) {
-          console.error("Error con API nativa:", error)
-        }
-      }
-
-      if (!impresionExitosa && typeof window.bluetoothPrint === "function") {
-        try {
-          window.bluetoothPrint(contenidoPOS)
-          impresionExitosa = true
-          console.log("Impresión exitosa usando Bluetooth")
-          alert("Factura impresa correctamente")
-          return
-        } catch (error) {
-          console.error("Error con Bluetooth:", error)
-        }
-      }
-
-      if (!impresionExitosa && typeof window.printToTerminal === "function") {
-        try {
-          window.printToTerminal(contenidoPOS)
-          impresionExitosa = true
-          console.log("Impresión exitosa en terminal")
-          alert("Factura impresa correctamente")
-          return
-        } catch (error) {
-          console.error("Error con terminal print:", error)
-        }
-      }
-
-      // Fallback a ventana de vista previa para impresión (sin auto-print)
+      // Si ninguna API funcionó, mostrar vista previa
       if (!impresionExitosa) {
-        console.log("Usando fallback de vista previa optimizada para A7")
-        const ventanaImpresion = window.open("", "_blank")
-        if (!ventanaImpresion) {
-          throw new Error("No se pudo abrir la ventana de impresión. Verifica los bloqueadores de ventanas emergentes.")
-        }
-
-        // Generar QR para la vista previa
-        let qrDataURL = ""
-        try {
-          qrDataURL = await posprinter.generateQRCode(`FACT-${factura.numero_factura}-${factura.monto_total}`)
-        } catch (qrError) {
-          console.error("Error al generar QR para vista previa:", qrError)
-        }
-
-        ventanaImpresion.document.write(`
-          <html>
-            <head>
-              <title>Factura ${factura.numero_factura} - Vista Previa A7</title>
-              <style>
-                body { 
-                  font-family: 'Courier New', monospace; 
-                  font-size: 8px; 
-                  width: ${A7_CONFIG.width}mm;
-                  margin: 0;
-                  padding: ${A7_CONFIG.marginLeft}mm;
-                  background: white;
-                  line-height: 1.2;
-                }
-                @media print {
-                  @page { 
-                    margin: 0; 
-                    size: ${A7_CONFIG.width}mm ${A7_CONFIG.height}mm;
-                  }
-                  body { 
-                    width: ${A7_CONFIG.printableWidth}mm;
-                    font-size: 7px;
-                  }
-                }
-                pre {
-                  white-space: pre-wrap;
-                  word-wrap: break-word;
-                  margin: 0;
-                  font-size: inherit;
-                  font-family: inherit;
-                }
-                .print-controls {
-                  margin-top: 5px;
-                  text-align: center;
-                }
-                @media screen {
-                  .print-controls {
-                    display: block;
-                  }
-                }
-                @media print {
-                  .print-controls {
-                    display: none;
-                  }
-                }
-                .qr-code {
-                  text-align: center;
-                  margin: 2mm 0;
-                }
-                .qr-code img {
-                  width: 20mm;
-                  height: 20mm;
-                }
-              </style>
-            </head>
-            <body>
-              <pre>${contenidoPOS}</pre>
-              <div class="qr-code">
-                ${qrDataURL ? `<img src="${qrDataURL}" alt="QR Code" />` : `<small>QR: FACT-${factura.numero_factura}</small>`}
-              </div>
-              <div class="print-controls">
-                <button onclick="window.print()" style="font-size: 10px; padding: 4px 8px; margin-right: 8px;">Imprimir en POS</button>
-                <button onclick="window.close()" style="font-size: 10px; padding: 4px 8px;">Cancelar</button>
-              </div>
-            </body>
-          </html>
-        `)
-        ventanaImpresion.document.close()
-        alert("Ventana de vista previa A7 abierta. Selecciona tu impresora POS y confirma la impresión.")
+        await mostrarVistaPreviaA7(factura, contenidoPOS);
       }
     } catch (error) {
-      console.error("Error al imprimir factura:", error)
-      const errorMessage = error instanceof Error ? error.message : "Error desconocido"
-      alert(`Error al intentar imprimir: ${errorMessage}. Por favor, verifica la conexión de la impresora.`)
+      console.error("Error al imprimir factura:", error);
+      const errorMessage = error instanceof Error ? error.message : "Error desconocido";
+      alert(`Error al intentar imprimir: ${errorMessage}. Por favor, verifica la conexión de la impresora.`);
     } finally {
-      setImprimiendo(null)
-      await posprinter.disconnect()
+      setImprimiendo(null);
+      await posprinter.disconnect();
     }
-  }
+  };
+
+  // Función para detectar APIs de impresión disponibles
+  const detectarAPIsImpresion = (): string[] => {
+    const apis: string[] = [];
+    
+    // Detectar APIs específicas
+    if (typeof window.POS?.printer?.printText === 'function') apis.push('posPrinter');
+    if (typeof window.printerAPI?.printText === 'function') apis.push('printerAPI');
+    if (typeof window.StarWebPrint?.print === 'function') apis.push('starWebPrint');
+    if (typeof window.Epson?.append === 'function') apis.push('epson');
+    if (typeof window.Print?.printText === 'function') apis.push('printText');
+    if (typeof window.bluetoothPrint === 'function') apis.push('bluetooth');
+    if (typeof window.printToTerminal === 'function') apis.push('terminal');
+    
+    // APIs de la librería posprinter
+    if (typeof posprinter.initUSB === 'function') apis.push('usb');
+    if (typeof posprinter.initSerial === 'function') apis.push('serial');
+    
+    return apis;
+  };
+
+  // Función para intentar impresión USB
+  const intentarImpresionUSB = async (contenido: string): Promise<boolean> => {
+    try {
+      const connected = await posprinter.initUSB();
+      if (!connected) return false;
+      
+      const printOptions: POSPrintOptions = {
+        fontSize: "small",
+        alignment: "left",
+        bold: false,
+        cutPaper: true,
+        feedLines: 3
+      };
+      
+      return await posprinter.printReceipt(contenido, printOptions);
+    } catch {
+      return false;
+    }
+  };
+
+  // Función para intentar impresión Serial/Bluetooth
+  const intentarImpresionSerial = async (contenido: string): Promise<boolean> => {
+    try {
+      const connected = await posprinter.initSerial();
+      if (!connected) return false;
+      
+      const printOptions: POSPrintOptions = {
+        fontSize: "small",
+        alignment: "left",
+        bold: false,
+        cutPaper: true,
+        feedLines: 3
+      };
+      
+      return await posprinter.printReceipt(contenido, printOptions);
+    } catch {
+      return false;
+    }
+  };
+
+  // Función para intentar impresión con API POS
+  const intentarImpresionPOS = async (contenido: string, factura: Factura | FacturaDetalle): Promise<boolean> => {
+    if (!window.POS?.printer?.printText) return false;
+    
+    try {
+      // Agregar QR code si está disponible en la API
+      const contenidoConQR = await agregarQRCodeSiEsPosible(contenido, factura);
+      return await window.POS.printer.printText(contenidoConQR);
+    } catch {
+      return await window.POS.printer.printText(contenido);
+    }
+  };
+
+  // Función para intentar impresión con StarWebPrint
+  const intentarImpresionStar = async (contenido: string): Promise<boolean> => {
+    if (!window.StarWebPrint) return false;
+    
+    try {
+      window.StarWebPrint.print([{ append: contenido }]);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  // Función para intentar impresión con Epson
+  const intentarImpresionEpson = async (contenido: string): Promise<boolean> => {
+    if (!window.Epson) return false;
+    
+    try {
+      window.Epson.append(contenido);
+      window.Epson.print();
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  // Función para intentar impresión con printerAPI
+  const intentarImpresionAPI = async (contenido: string): Promise<boolean> => {
+    if (!window.printerAPI?.printText) return false;
+    
+    try {
+      return await window.printerAPI.printText(contenido);
+    } catch {
+      return false;
+    }
+  };
+
+  // Función para mostrar vista previa A7
+  const mostrarVistaPreviaA7 = async (factura: Factura | FacturaDetalle, contenido: string): Promise<void> => {
+    console.log("Usando fallback de vista previa optimizada para A7");
+    
+    // Generar QR para la vista previa
+    let qrDataURL = "";
+    try {
+      qrDataURL = await posprinter.generateQRCode(`FACT-${factura.numero_factura}-${factura.monto_total}`);
+    } catch (qrError) {
+      console.error("Error al generar QR para vista previa:", qrError);
+    }
+
+    const ventanaImpresion = window.open("", "_blank");
+    if (!ventanaImpresion) {
+      throw new Error("No se pudo abrir la ventana de impresión. Verifica los bloqueadores de ventanas emergentes.");
+    }
+
+    ventanaImpresion.document.write(`
+      <html>
+        <head>
+          <title>Factura ${factura.numero_factura} - Vista Previa A7</title>
+          <style>
+            body { 
+              font-family: 'Courier New', monospace; 
+              font-size: 8px; 
+              width: ${A7_CONFIG.width}mm;
+              margin: 0;
+              padding: ${A7_CONFIG.marginLeft}mm;
+              background: white;
+              line-height: 1.2;
+            }
+            @media print {
+              @page { 
+                margin: 0; 
+                size: ${A7_CONFIG.width}mm ${A7_CONFIG.height}mm;
+              }
+              body { 
+                width: ${A7_CONFIG.printableWidth}mm;
+                font-size: 7px;
+              }
+            }
+            pre {
+              white-space: pre-wrap;
+              word-wrap: break-word;
+              margin: 0;
+              font-size: inherit;
+              font-family: inherit;
+            }
+            .print-controls {
+              margin-top: 5px;
+              text-align: center;
+            }
+            @media screen {
+              .print-controls {
+                display: block;
+              }
+            }
+            @media print {
+              .print-controls {
+                display: none;
+              }
+            }
+            .qr-code {
+              text-align: center;
+              margin: 2mm 0;
+            }
+            .qr-code img {
+              width: 20mm;
+              height: 20mm;
+            }
+            .status-message {
+              padding: 10px;
+              margin: 10px 0;
+              border-radius: 5px;
+              background-color: #f8f9fa;
+              border-left: 4px solid #ffc107;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="status-message">
+            <strong>Modo Vista Previa</strong><br>
+            No se detectó una impresora POS conectada.<br>
+            Use esta vista para imprimir en cualquier impresora configurada en su sistema.
+          </div>
+          <pre>${contenido}</pre>
+          <div class="qr-code">
+            ${qrDataURL ? `<img src="${qrDataURL}" alt="QR Code" />` : `<small>QR: FACT-${factura.numero_factura}</small>`}
+          </div>
+          <div class="print-controls">
+            <button onclick="window.print()" style="font-size: 10px; padding: 4px 8px; margin-right: 8px;">Imprimir en POS</button>
+            <button onclick="window.close()" style="font-size: 10px; padding: 4px 8px;">Cancelar</button>
+          </div>
+          <script>
+            // Intentar imprimir automáticamente si está en un entorno específico
+            if (window.location.search.includes('autoPrint=true')) {
+              window.print();
+            }
+          </script>
+        </body>
+      </html>
+    `);
+    ventanaImpresion.document.close();
+    alert("Ventana de vista previa A7 abierta. Selecciona tu impresora POS y confirma la impresión.");
+  };
+
+  // Función para agregar QR code si es posible
+  const agregarQRCodeSiEsPosible = async (contenido: string, factura: Factura | FacturaDetalle): Promise<string> => {
+    try {
+      const qrData = `FACT-${factura.numero_factura}-${factura.monto_total}`;
+      const qrCode = await posprinter.generateQRCode(qrData);
+      
+      // Si tenemos un código QR, agregarlo al contenido
+      if (qrCode) {
+        return contenido + `\n\n[QR Code: ${qrData}]`;
+      }
+    } catch (error) {
+      console.error("Error al generar QR code:", error);
+    }
+    
+    return contenido;
+  };
 
   const descargarFactura = (factura: Factura | FacturaDetalle) => {
     console.log("Descargando factura:", factura.numero_factura)
