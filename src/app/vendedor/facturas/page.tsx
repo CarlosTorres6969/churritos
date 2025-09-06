@@ -9,15 +9,8 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { ArrowLeft, FileText, Eye, Printer, Download, Calendar, X, Search, Loader2 } from "lucide-react"
-
-// Configuración para formato A7
-const A7_CONFIG = {
-  width: 74,
-  height: 105,
-  marginLeft: 2,
-  printableWidth: 70,
-  charactersPerLine: 32
-};
+import { requireAuth } from "@/lib/auth"
+import { posprinter, type POSPrintOptions, A7_CONFIG } from "@/lib/pos-printer"
 
 interface Factura {
   id_factura: number
@@ -57,6 +50,44 @@ interface UsuarioAutenticado {
   apellido: string
 }
 
+// Interface para APIs de impresión POS
+interface POSPrinterAPI {
+  printText?: (text: string) => Promise<boolean>
+  printReceipt?: (text: string) => Promise<boolean>
+  getPrinterStatus?: () => Promise<string>
+  connectPrinter?: () => Promise<boolean>
+  isConnected?: () => boolean
+}
+
+// Interfaces para APIs específicas de fabricantes
+interface StarWebPrintAPI {
+  print: (commands: { append: string }[]) => void
+}
+
+interface EpsonAPI {
+  append: (text: string) => void
+  print: () => void
+}
+
+// Extender Window para incluir APIs POS
+declare global {
+  interface Window {
+    POS?: {
+      printer?: POSPrinterAPI
+    }
+    printerAPI?: POSPrinterAPI
+    StarWebPrint?: StarWebPrintAPI
+    Epson?: EpsonAPI
+    Print?: {
+      printText: (text: string) => void
+    }
+    bluetoothPrint?: (text: string) => void
+    printToTerminal?: (text: string) => void
+    getPrinterStatus?: () => Promise<string>
+    checkPrinter?: () => Promise<string>
+  }
+}
+
 // AbortController para cancelar solicitudes pendientes
 let abortController = new AbortController()
 
@@ -78,54 +109,37 @@ export default function FacturasVendedor() {
   const [imprimiendo, setImprimiendo] = useState<number | null>(null)
   const router = useRouter()
 
-  // Datos de ejemplo para simulación
-  const datosEjemplo: Factura[] = [
-    {
-      id_factura: 1,
-      numero_factura: "001-001-01-00000001",
-      nombre_cliente: "Cliente Ejemplo 1",
-      fecha_emision: "2023-10-15T14:30:00",
-      monto_total: 1250.75,
-      codigo_cai: "123456789012345678901234567890",
-      anulada: false,
-      productos: [
-        { nombre: "Producto A", cantidad: 2, precio_unitario: 250, total: 500 },
-        { nombre: "Producto B", cantidad: 3, precio_unitario: 250.25, total: 750.75 }
-      ]
-    },
-    {
-      id_factura: 2,
-      numero_factura: "001-001-01-00000002",
-      nombre_cliente: "Cliente Ejemplo 2",
-      fecha_emision: "2023-10-16T10:15:00",
-      monto_total: 850.50,
-      codigo_cai: "098765432109876543210987654321",
-      anulada: false,
-      productos: [
-        { nombre: "Producto C", cantidad: 1, precio_unitario: 450, total: 450 },
-        { nombre: "Producto D", cantidad: 2, precio_unitario: 200.25, total: 400.50 }
-      ]
-    }
-  ];
-
   const cargarFacturas = useCallback(
-    async () => {
+    async (idPersonal: number) => {
       abortController.abort()
       abortController = new AbortController()
 
       try {
         setLoading(true)
         setError("")
-        
-        // En una aplicación real, aquí se haría la llamada a la API
-        // Simulamos una demora de red
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        // Usamos datos de ejemplo para la simulación
-        setFacturas(datosEjemplo)
-        setFacturasFiltradas(datosEjemplo)
-        setTotalPages(1)
-        
+        let url = `/API/Factura?page=${currentPage}&pageSize=10&id_personal=${idPersonal}`
+
+        if (filtroActivo && fechaInicio && fechaFin) {
+          url += `&fechaInicio=${fechaInicio}&fechaFin=${fechaFin}`
+        }
+
+        const response = await fetch(url, {
+          signal: abortController.signal,
+        })
+
+        if (!response.ok) {
+          throw new Error(`Error HTTP: ${response.status}`)
+        }
+
+        const result = await response.json()
+
+        if (result.success) {
+          setFacturas(result.data.facturas || [])
+          setFacturasFiltradas(result.data.facturas || [])
+          setTotalPages(result.data.pagination?.totalPages || 1)
+        } else {
+          setError(result.error || "Error al cargar facturas")
+        }
       } catch (error: unknown) {
         if (error instanceof Error && error.name === "AbortError") {
           console.log("Solicitud cancelada")
@@ -137,18 +151,13 @@ export default function FacturasVendedor() {
         setLoading(false)
       }
     },
-    [currentPage, filtroActivo, fechaInicio, fechaFin, datosEjemplo], // Añadida la dependencia datosEjemplo
+    [currentPage, filtroActivo, fechaInicio, fechaFin],
   )
 
   useEffect(() => {
     const obtenerUsuario = () => {
       try {
-        // Simulamos un usuario autenticado
-        const user: UsuarioAutenticado = {
-          id_personal: 1,
-          nombre: "Juan",
-          apellido: "Pérez"
-        };
+        const user = requireAuth()
         setUsuarioAutenticado(user)
       } catch (error) {
         console.error("Error al obtener el usuario autenticado:", error)
@@ -160,8 +169,8 @@ export default function FacturasVendedor() {
   }, [router])
 
   useEffect(() => {
-    if (usuarioAutenticado) {
-      cargarFacturas()
+    if (usuarioAutenticado && usuarioAutenticado.id_personal) {
+      cargarFacturas(usuarioAutenticado.id_personal)
     }
   }, [usuarioAutenticado, currentPage, filtroActivo, fechaInicio, fechaFin, cargarFacturas])
 
@@ -179,6 +188,7 @@ export default function FacturasVendedor() {
     }
   }, [terminoBusqueda, facturas])
 
+  // Formatear texto para impresión POS
   const formatearParaPOSA7 = (factura: Factura | FacturaDetalle): string => {
     const lineLength = A7_CONFIG.charactersPerLine
 
@@ -193,7 +203,7 @@ export default function FacturasVendedor() {
 
     let contenido = `${line}
 ${centerText("INVERSIONES MEJIA")}
-${centerText("FACTURA")}
+${centerText("FACTURA POS")}
 ${line}
 No: ${factura.numero_factura}
 Fecha: ${formatearFecha(factura.fecha_emision).substring(0, 14)}
@@ -224,7 +234,8 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}
 ${line}
 ${centerText("Gracias por su compra")}
 ${centerText("Sistema POS A7")}
-${line}`
+${line}
+\n\n\n` // Avanzar papel para cortar
 
     return contenido
   }
@@ -232,17 +243,20 @@ ${line}`
   const verFactura = async (factura: Factura) => {
     try {
       setCargandoFactura(factura.id_factura)
-      
-      // Simulamos la carga de detalles
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      const facturaDetalle: FacturaDetalle = {
-        ...factura,
-        tipo_pago: "EFECTIVO"
-      };
-      
-      setFacturaSeleccionada(facturaDetalle)
-      setModalAbierto(true)
+      const response = await fetch(`/API/Factura?id_factura=${factura.id_factura}`)
+
+      if (!response.ok) {
+        throw new Error(`Error HTTP: ${response.status}`)
+      }
+
+      const result = await response.json()
+
+      if (result.success) {
+        setFacturaSeleccionada(result.data)
+        setModalAbierto(true)
+      } else {
+        setError("Error al cargar detalles de la factura")
+      }
     } catch (error) {
       setError("Error de conexión al cargar factura")
       console.error("Error:", error)
@@ -251,211 +265,249 @@ ${line}`
     }
   }
 
-  const imprimirDirectamente = (contenido: string) => {
-    // Crear un iframe oculto para la impresión
-    const iframe = document.createElement('iframe');
-    iframe.style.display = 'none';
-    document.body.appendChild(iframe);
-    
-    const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
-    
-    if (iframeDoc) {
-      iframeDoc.open();
-      iframeDoc.write(`
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <title>Impresión Factura</title>
-            <style>
-              @media print {
-                body {
-                  width: 74mm;
-                  margin: 0;
-                  padding: 0;
-                  font-family: 'Courier New', monospace;
-                  font-size: 8px;
-                  line-height: 1.1;
-                }
-              }
-              pre {
-                white-space: pre-wrap;
-                word-wrap: break-word;
-                margin: 0;
-              }
-            </style>
-          </head>
-          <body>
-            <pre>${contenido}</pre>
-            <script>
-              window.onload = function() {
-                window.print();
-                setTimeout(function() {
-                  window.close();
-                }, 100);
-              }
-            </script>
-          </body>
-        </html>
-      `);
-      iframeDoc.close();
-    }
-    
-    // Eliminar el iframe después de un tiempo
-    setTimeout(() => {
-      document.body.removeChild(iframe);
-    }, 1000);
-  }
-
-  const mostrarVistaPreviaImpresion = (factura: Factura | FacturaDetalle, contenidoPOS: string) => {
-    const ventanaImpresion = window.open("", "_blank")
-    if (!ventanaImpresion) {
-      // Si no se puede abrir ventana, intentar imprimir directamente
-      imprimirDirectamente(contenidoPOS);
-      return;
-    }
-
-    ventanaImpresion.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Factura ${factura.numero_factura}</title>
-          <style>
-            @media print {
-              body { 
-                width: ${A7_CONFIG.width}mm;
-                height: ${A7_CONFIG.height}mm;
-                margin: 0;
-                padding: 0;
-                font-family: 'Courier New', monospace;
-                font-size: 7px;
-                line-height: 1.1;
-              }
-              .no-print {
-                display: none !important;
-              }
-            }
-            @media screen {
-              body {
-                font-family: Arial, sans-serif;
-                font-size: 14px;
-                padding: 20px;
-                background-color: #f5f5f5;
-                line-height: 1.6;
-              }
-              .print-controls {
-                display: block;
-                margin: 20px 0;
-                text-align: center;
-              }
-              .instructions {
-                background-color: #fff3cd;
-                border: 1px solid #ffeaa7;
-                border-radius: 5px;
-                padding: 15px;
-                margin: 15px 0;
-              }
-              .instructions h3 {
-                margin-top: 0;
-                color: #856404;
-              }
-            }
-            pre {
-              white-space: pre-wrap;
-              word-wrap: break-word;
-              margin: 0;
-              font-family: 'Courier New', monospace;
-            }
-            .container {
-              width: ${A7_CONFIG.width}mm;
-              min-height: ${A7_CONFIG.height}mm;
-              padding: 2mm;
-              background: white;
-              box-sizing: border-box;
-              border: 1px dashed #ccc;
-              margin: 0 auto;
-            }
-            .status-message {
-              padding: 10px;
-              margin: 10px 0;
-              border-radius: 5px;
-              text-align: center;
-            }
-            .info {
-              background-color: #d1ecf1;
-              color: #0c5460;
-              border: 1px solid #bee5eb;
-            }
-            button {
-              padding: 10px 20px;
-              margin: 0 10px;
-              cursor: pointer;
-              background-color: #007bff;
-              color: white;
-              border: none;
-              border-radius: 4px;
-              font-size: 16px;
-            }
-            button:hover {
-              background-color: #0056b3;
-            }
-          </style>
-        </head>
-        <body>
-          <div class="no-print">
-            <div class="status-message info">
-              <h2>Vista previa para impresión en formato A7 (74x105mm)</h2>
-            </div>
-            
-            <div class="instructions">
-              <h3>Para imprimir directamente en su impresora POS:</h3>
-              <p>1. Haga clic en el botón "Imprimir"</p>
-              <p>2. Seleccione su impresora POS en el diálogo de impresión</p>
-              <p>3. Asegúrese de que la impresora esté encendida y con papel</p>
-            </div>
-          </div>
-          
-          <div class="container">
-            <pre>${contenidoPOS}</pre>
-          </div>
-          
-          <div class="print-controls no-print">
-            <button onclick="window.print()">Imprimir</button>
-            <button onclick="window.close()" style="background-color: #6c757d;">Cerrar</button>
-          </div>
-          
-          <script>
-            // Intentar imprimir automáticamente después de un breve retraso
-            setTimeout(function() {
-              window.print();
-            }, 500);
-          </script>
-        </body>
-      </html>
-    `)
-    ventanaImpresion.document.close()
-  }
-
   const imprimirFactura = async (factura: Factura | FacturaDetalle) => {
     setImprimiendo(factura.id_factura)
 
     try {
-      // Generar contenido para POS
+      // Generar contenido para POS en formato ISO A7
       const contenidoPOS = formatearParaPOSA7(factura)
-      
-      // Intentar imprimir directamente
-      imprimirDirectamente(contenidoPOS);
-      
-      // También mostrar vista previa como respaldo
-      setTimeout(() => {
-        mostrarVistaPreviaImpresion(factura, contenidoPOS);
-      }, 300);
-      
+
+      // Intentar conexión con impresora POS
+      let printerConnected = false
+
+      // Intento de conexión USB
+      try {
+        printerConnected = await posprinter.initUSB()
+        if (printerConnected) {
+          console.log("Conexión USB establecida")
+        }
+      } catch (usbError) {
+        console.error("Error en conexión USB:", usbError)
+      }
+
+      // Si falla USB, intentar Serial/Bluetooth
+      if (!printerConnected) {
+        try {
+          printerConnected = await posprinter.initSerial()
+          if (printerConnected) {
+            console.log("Conexión Serial/Bluetooth establecida")
+          }
+        } catch (serialError) {
+          console.error("Error en conexión Serial/Bluetooth:", serialError)
+        }
+      }
+
+      if (printerConnected) {
+        // Usar impresión directa si está disponible
+        const printOptions: POSPrintOptions = {
+          fontSize: "small",
+          alignment: "left",
+          bold: false,
+          cutPaper: true,
+          feedLines: 3,
+          qrCode: `FACT-${factura.numero_factura}-${factura.monto_total}`,
+        }
+
+        try {
+          const success = await posprinter.printReceipt(contenidoPOS, printOptions)
+          if (success) {
+            alert("Factura impresa correctamente en la impresora POS")
+            return
+          } else {
+            throw new Error("Fallo en la impresión directa en POS")
+          }
+        } catch (printError) {
+          console.error("Error al imprimir en POS:", printError)
+        }
+      }
+
+      // Fallback a métodos de impresión alternativos
+      let impresionExitosa = false
+
+      // Intentar con APIs de impresión POS
+      if (window.POS?.printer?.printText) {
+        try {
+          impresionExitosa = await window.POS.printer.printText(contenidoPOS)
+          if (impresionExitosa) {
+            console.log("Impresión exitosa con API POS")
+            alert("Factura impresa correctamente")
+            return
+          }
+        } catch (error) {
+          console.error("Error con API POS:", error)
+        }
+      }
+
+      if (!impresionExitosa && window.printerAPI?.printText) {
+        try {
+          impresionExitosa = await window.printerAPI.printText(contenidoPOS)
+          if (impresionExitosa) {
+            console.log("Impresión exitosa con printerAPI")
+            alert("Factura impresa correctamente")
+            return
+          }
+        } catch (error) {
+          console.error("Error con printerAPI:", error)
+        }
+      }
+
+      // APIs específicas de fabricantes
+      if (!impresionExitosa && window.StarWebPrint) {
+        try {
+          const commands: { append: string }[] = [{ append: contenidoPOS }]
+          window.StarWebPrint.print(commands)
+          impresionExitosa = true
+          console.log("Impresión exitosa con StarWebPrint")
+          alert("Factura impresa correctamente")
+          return
+        } catch (error) {
+          console.error("Error con StarWebPrint:", error)
+        }
+      }
+
+      if (!impresionExitosa && window.Epson) {
+        try {
+          window.Epson.append(contenidoPOS)
+          window.Epson.print()
+          impresionExitosa = true
+          console.log("Impresión exitosa con Epson API")
+          alert("Factura impresa correctamente")
+          return
+        } catch (error) {
+          console.error("Error con Epson API:", error)
+        }
+      }
+
+      // APIs genéricas
+      if (!impresionExitosa && typeof window.Print?.printText === "function") {
+        try {
+          window.Print.printText(contenidoPOS)
+          impresionExitosa = true
+          console.log("Impresión exitosa usando API nativa")
+          alert("Factura impresa correctamente")
+          return
+        } catch (error) {
+          console.error("Error con API nativa:", error)
+        }
+      }
+
+      if (!impresionExitosa && typeof window.bluetoothPrint === "function") {
+        try {
+          window.bluetoothPrint(contenidoPOS)
+          impresionExitosa = true
+          console.log("Impresión exitosa usando Bluetooth")
+          alert("Factura impresa correctamente")
+          return
+        } catch (error) {
+          console.error("Error con Bluetooth:", error)
+        }
+      }
+
+      if (!impresionExitosa && typeof window.printToTerminal === "function") {
+        try {
+          window.printToTerminal(contenidoPOS)
+          impresionExitosa = true
+          console.log("Impresión exitosa en terminal")
+          alert("Factura impresa correctamente")
+          return
+        } catch (error) {
+          console.error("Error con terminal print:", error)
+        }
+      }
+
+      // Fallback a ventana de vista previa para impresión (sin auto-print)
+      if (!impresionExitosa) {
+        console.log("Usando fallback de vista previa optimizada para A7")
+        const ventanaImpresion = window.open("", "_blank")
+        if (!ventanaImpresion) {
+          throw new Error("No se pudo abrir la ventana de impresión. Verifica los bloqueadores de ventanas emergentes.")
+        }
+
+        // Generar QR para la vista previa
+        let qrDataURL = ""
+        try {
+          qrDataURL = await posprinter.generateQRCode(`FACT-${factura.numero_factura}-${factura.monto_total}`)
+        } catch (qrError) {
+          console.error("Error al generar QR para vista previa:", qrError)
+        }
+
+        ventanaImpresion.document.write(`
+          <html>
+            <head>
+              <title>Factura ${factura.numero_factura} - Vista Previa A7</title>
+              <style>
+                body { 
+                  font-family: 'Courier New', monospace; 
+                  font-size: 8px; 
+                  width: ${A7_CONFIG.width}mm;
+                  margin: 0;
+                  padding: ${A7_CONFIG.marginLeft}mm;
+                  background: white;
+                  line-height: 1.2;
+                }
+                @media print {
+                  @page { 
+                    margin: 0; 
+                    size: ${A7_CONFIG.width}mm ${A7_CONFIG.height}mm;
+                  }
+                  body { 
+                    width: ${A7_CONFIG.printableWidth}mm;
+                    font-size: 7px;
+                  }
+                }
+                pre {
+                  white-space: pre-wrap;
+                  word-wrap: break-word;
+                  margin: 0;
+                  font-size: inherit;
+                  font-family: inherit;
+                }
+                .print-controls {
+                  margin-top: 5px;
+                  text-align: center;
+                }
+                @media screen {
+                  .print-controls {
+                    display: block;
+                  }
+                }
+                @media print {
+                  .print-controls {
+                    display: none;
+                  }
+                }
+                .qr-code {
+                  text-align: center;
+                  margin: 2mm 0;
+                }
+                .qr-code img {
+                  width: 20mm;
+                  height: 20mm;
+                }
+              </style>
+            </head>
+            <body>
+              <pre>${contenidoPOS}</pre>
+              <div class="qr-code">
+                ${qrDataURL ? `<img src="${qrDataURL}" alt="QR Code" />` : `<small>QR: FACT-${factura.numero_factura}</small>`}
+              </div>
+              <div class="print-controls">
+                <button onclick="window.print()" style="font-size: 10px; padding: 4px 8px; margin-right: 8px;">Imprimir en POS</button>
+                <button onclick="window.close()" style="font-size: 10px; padding: 4px 8px;">Cancelar</button>
+              </div>
+            </body>
+          </html>
+        `)
+        ventanaImpresion.document.close()
+        alert("Ventana de vista previa A7 abierta. Selecciona tu impresora POS y confirma la impresión.")
+      }
     } catch (error) {
       console.error("Error al imprimir factura:", error)
       const errorMessage = error instanceof Error ? error.message : "Error desconocido"
-      alert("Error de impresión: " + errorMessage)
+      alert(`Error al intentar imprimir: ${errorMessage}. Por favor, verifica la conexión de la impresora.`)
     } finally {
       setImprimiendo(null)
+      await posprinter.disconnect()
     }
   }
 
@@ -585,40 +637,6 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}`.trim()
           </Alert>
         )}
 
-        {/* Configuración de impresora */}
-        <Card className="mb-4">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
-              <Printer className="h-4 w-4 sm:h-5 sm:w-5" />
-              Configuración de Impresión
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-col gap-3">
-              <p className="text-sm text-gray-600">
-                Para imprimir facturas en su impresora POS, asegúrese de:
-              </p>
-              <ul className="text-sm text-gray-600 list-disc pl-5">
-                <li>Tener la impresora POS conectada y encendida</li>
-                <li>Seleccionar la impresora POS en el diálogo de impresión</li>
-                <li>Configurar el tamaño de papel a 74mm de ancho</li>
-              </ul>
-              <Button 
-                onClick={() => {
-                  // Probar impresión con un ejemplo
-                  const facturaEjemplo = datosEjemplo[0];
-                  const contenido = formatearParaPOSA7(facturaEjemplo);
-                  imprimirDirectamente(contenido);
-                }}
-                className="mt-2"
-              >
-                <Printer className="h-4 w-4 mr-2" />
-                Probar Impresión
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
         {/* Buscador */}
         <Card className="mb-4">
           <CardHeader>
@@ -632,7 +650,7 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}`.trim()
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
               <Input
                 type="text"
-                placeholder="Buscar por número de factura or nombre de cliente..."
+                placeholder="Buscar por número de factura o nombre de cliente..."
                 value={terminoBusqueda}
                 onChange={(e) => setTerminoBusqueda(e.target.value)}
                 className="pl-10 text-sm"
