@@ -101,18 +101,6 @@ const DIAS_SEMANA_MAP: Record<number, string> = {
   7: "Domingo",
 }
 
-const OPCIONES_FILTRO = [
-  { value: "todos", label: "Todos los días" },
-  { value: "1", label: "Lunes" },
-  { value: "2", label: "Martes" },
-  { value: "3", label: "Miércoles" },
-  { value: "4", label: "Jueves" },
-  { value: "5", label: "Viernes" },
-  { value: "6", label: "Sábado" },
-  { value: "7", label: "Domingo" },
-  { value: "sin_asignar", label: "Sin día asignado" },
-]
-
 function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProps) {
   const [productosDisponibles, setProductosDisponibles] = useState<Producto[]>([])
   const [productosFiltrados, setProductosFiltrados] = useState<Producto[]>([])
@@ -128,11 +116,10 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
   const [cargandoClientes, setCargandoClientes] = useState(false)
   const [cargandoRuta, setCargandoRuta] = useState(false)
   const [error, setError] = useState("")
-  const [filtroDiaVisita, setFiltroDiaVisita] = useState<string>("todos")
   const [rutaUsuario, setRutaUsuario] = useState<Ruta | null>(null)
   const [usuarioAutenticado, setUsuarioAutenticado] = useState<UsuarioAutenticado | null>(null)
   const [isInitialLoad, setIsInitialLoad] = useState(true)
-  const [terminoBusqueda, setTerminoBusqueda] = useState("") // Nuevo estado para el término de búsqueda
+  const [terminoBusqueda, setTerminoBusqueda] = useState("")
   const router = useRouter()
 
   const esStockMedio = (stock: number): boolean => {
@@ -168,52 +155,42 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
     [clientesDisponibles],
   )
 
-  // Función para filtrar clientes por término de búsqueda y día de visita
+  const obtenerDiaActualNumero = (): number => {
+    return new Date().getDay() === 0 ? 7 : new Date().getDay()
+  }
+
+  // Función para filtrar clientes por término de búsqueda y día actual
   const filtrarClientes = useCallback(() => {
-    let clientesFiltradosPorDia = clientesDisponibles.filter((cliente) => cliente.activo !== false);
-    
-    // Aplicar filtro por día de visita
-    if (filtroDiaVisita !== "todos") {
-      if (filtroDiaVisita === "sin_asignar") {
-        clientesFiltradosPorDia = clientesFiltradosPorDia.filter(
-          (cliente) => !cliente.dia_visita || cliente.dia_visita === 0
-        );
-      } else {
-        const diaNumero = Number.parseInt(filtroDiaVisita);
-        clientesFiltradosPorDia = clientesFiltradosPorDia.filter(
-          (cliente) => cliente.dia_visita === diaNumero
-        );
-      }
-    }
-    
-    // Aplicar filtro por ruta del usuario
+    const diaActual = obtenerDiaActualNumero()
+    let clientesFiltradosPorDia = clientesDisponibles.filter(
+      (cliente) => cliente.activo !== false && cliente.dia_visita === diaActual
+    )
+
     if (rutaUsuario) {
       clientesFiltradosPorDia = clientesFiltradosPorDia.filter(
         (cliente) => cliente.id_ruta === rutaUsuario.id_ruta
-      );
+      )
     }
-    
-    // Aplicar filtro por término de búsqueda si existe
+
     if (terminoBusqueda.trim()) {
-      const termino = terminoBusqueda.toLowerCase().trim();
+      const termino = terminoBusqueda.toLowerCase().trim()
       return clientesFiltradosPorDia.filter((cliente) => {
         return (
           cliente.nombre.toLowerCase().includes(termino) ||
           cliente.apellido.toLowerCase().includes(termino) ||
           (cliente.telefono && cliente.telefono.includes(termino)) ||
           (cliente.direccion && cliente.direccion.toLowerCase().includes(termino))
-        );
-      });
+        )
+      })
     }
-    
-    return clientesFiltradosPorDia;
-  }, [clientesDisponibles, filtroDiaVisita, rutaUsuario, terminoBusqueda]);
 
-  // Actualizar clientes filtrados cuando cambien los filtros
+    return clientesFiltradosPorDia
+  }, [clientesDisponibles, rutaUsuario, terminoBusqueda])
+
   useEffect(() => {
-    const clientesFiltrados = filtrarClientes();
-    setClientesFiltrados(clientesFiltrados);
-  }, [filtrarClientes]);
+    const clientesFiltrados = filtrarClientes()
+    setClientesFiltrados(clientesFiltrados)
+  }, [filtrarClientes])
 
   const fetchClientes = useCallback(async () => {
     if (!rutaUsuario) return
@@ -601,9 +578,6 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
 
   const total = calcularTotal()
   const cambio = tipoPago === "efectivo" ? Math.max(0, efectivoRecibido - total) : 0
-  const obtenerDiaActualNumero = (): number => {
-    return new Date().getDay() === 0 ? 7 : new Date().getDay()
-  }
 
   if (!usuarioAutenticado) {
     return (
@@ -745,7 +719,6 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {/* Campo de búsqueda agregado */}
                     <div className="space-y-2">
                       <Label>Buscar cliente</Label>
                       <div className="relative">
@@ -757,28 +730,6 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
                           onChange={(e) => setTerminoBusqueda(e.target.value)}
                         />
                       </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>Filtrar por día de visita</Label>
-                      <Select value={filtroDiaVisita} onValueChange={setFiltroDiaVisita}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Seleccionar día" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {OPCIONES_FILTRO.map((opcion) => (
-                            <SelectItem key={opcion.value} value={opcion.value}>
-                              {opcion.value === "todos"
-                                ? opcion.label
-                                : opcion.value === "sin_asignar"
-                                  ? opcion.label
-                                  : `${opcion.label} (${
-                                      opcion.value === obtenerDiaActualNumero().toString() ? "hoy" : ""
-                                    })`}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
                     </div>
 
                     {cargandoClientes ? (
@@ -817,14 +768,8 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
                     ) : (
                       <p className="text-gray-500 text-center py-4">
                         {terminoBusqueda.trim()
-                          ? "No se encontraron clientes que coincidan con la búsqueda"
-                          : filtroDiaVisita === "todos"
-                            ? "No hay clientes disponibles en tu ruta"
-                            : filtroDiaVisita === "sin_asignar"
-                              ? "No hay clientes sin día de visita asignado en tu ruta"
-                              : `No hay clientes con visita los ${
-                                  OPCIONES_FILTRO.find((d) => d.value === filtroDiaVisita)?.label || filtroDiaVisita
-                                } en tu ruta`}
+                          ? "No se encontraron clientes que coincidan con la búsqueda para hoy"
+                          : `No hay clientes con visita hoy (${obtenerNombreDia(obtenerDiaActualNumero())})`}
                       </p>
                     )}
                   </div>

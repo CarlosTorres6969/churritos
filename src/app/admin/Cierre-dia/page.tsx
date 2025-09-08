@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useEffect, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -22,6 +21,7 @@ import {
   ChevronDown,
   X,
   Printer,
+  Calendar,
 } from "lucide-react"
 
 interface Liquidacion {
@@ -132,7 +132,9 @@ const DetallesCierreModal = ({
   }
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString("es-HN", { timeZone: "America/Tegucigalpa" })
+    const date = new Date(dateString)
+    const adjustedDate = new Date(date.getTime() + (date.getTimezoneOffset() * 60000))
+    return adjustedDate.toLocaleDateString("es-HN", { timeZone: "America/Tegucigalpa" })
   }
 
   const detalles = cierre.liquidacion?.filter((item) => item.tipo === "DETALLE") || []
@@ -364,16 +366,14 @@ export default function CierresPage() {
 
       if (data.success) {
         if (fechaFilter) {
-          setCierres(
-            (data.data.cierres || []).map((cierre: CierreDia) => ({
-              ...cierre,
-              liquidacion: (data.data.liquidacion || []).filter(
-                (item: Liquidacion) => item.id_personal === cierre.id_personal || item.id_personal === null,
-              ),
-            })),
-          )
+          const cierresArray = data.data.cierre ? [data.data.cierre] : []
+          const cierresConLiquidacion = cierresArray.map((cierre: CierreDia) => ({
+            ...cierre,
+            liquidacion: data.data.liquidacion || []
+          }))
+          setCierres(cierresConLiquidacion)
           setTotalPages(1)
-          setTotalCount(data.data.cierres?.length || 0)
+          setTotalCount(cierresConLiquidacion.length)
         } else {
           setCierres(data.data.cierres || [])
           setTotalPages(data.data.pagination?.totalPages || 1)
@@ -448,7 +448,9 @@ export default function CierresPage() {
   }
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString("es-HN", { timeZone: "America/Tegucigalpa" })
+    const date = new Date(dateString)
+    const adjustedDate = new Date(date.getTime() + (date.getTimezoneOffset() * 60000))
+    return adjustedDate.toLocaleDateString("es-HN", { timeZone: "America/Tegucigalpa" })
   }
 
   const handleExport = () => {
@@ -527,17 +529,27 @@ export default function CierresPage() {
         <Card className="mb-6">
           <CardHeader>
             <CardTitle>Filtros de Búsqueda</CardTitle>
-            <CardDescription>Filtra los cierres por fecha o vendedor</CardDescription>
+            <CardDescription>
+              Filtra los cierres por fecha o vendedor.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex flex-col md:flex-row gap-4">
               <form onSubmit={handleSearch} className="flex-1 flex flex-col md:flex-row gap-4">
-                <Input
-                  type="date"
-                  value={fechaFilter}
-                  onChange={(e) => setFechaFilter(e.target.value)}
-                  className="flex-1"
-                />
+                <div className="flex-1 relative">
+                  <Input
+                    type="date"
+                    value={fechaFilter}
+                    onChange={(e) => setFechaFilter(e.target.value)}
+                    className="flex-1"
+                  />
+                  {fechaFilter && (
+                    <div className="absolute -bottom-6 left-0 text-xs text-muted-foreground flex items-center">
+                      <Calendar className="h-3 w-3 mr-1" />
+                      Mostrando cierres del: {formatDate(fechaFilter)}
+                    </div>
+                  )}
+                </div>
                 <CustomSelect
                   value={vendedorFilter}
                   onValueChange={setVendedorFilter}

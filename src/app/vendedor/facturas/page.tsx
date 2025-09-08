@@ -91,6 +91,19 @@ declare global {
 // AbortController para cancelar solicitudes pendientes
 let abortController = new AbortController()
 
+// Configuración de tamaño de fuente para impresión
+interface PrintFontSize {
+  normal: number;
+  large: number;
+  title: number;
+}
+
+const FONT_SIZES: PrintFontSize = {
+  normal: 1,    // Tamaño normal (1x)
+  large: 1.5,   // Tamaño grande (1.5x)
+  title: 2      // Tamaño título (2x)
+};
+
 export default function FacturasVendedor() {
   const [facturas, setFacturas] = useState<Factura[]>([])
   const [facturasFiltradas, setFacturasFiltradas] = useState<Factura[]>([])
@@ -107,6 +120,7 @@ export default function FacturasVendedor() {
   const [terminoBusqueda, setTerminoBusqueda] = useState("")
   const [cargandoFactura, setCargandoFactura] = useState<number | null>(null)
   const [imprimiendo, setImprimiendo] = useState<number | null>(null)
+  const [tamañoFuente, setTamañoFuente] = useState<keyof PrintFontSize>('large');
   const router = useRouter()
 
   const cargarFacturas = useCallback(
@@ -189,17 +203,24 @@ export default function FacturasVendedor() {
   }, [terminoBusqueda, facturas])
 
   // Formatear texto para impresión POS
-  const formatearParaPOSA7 = (factura: Factura | FacturaDetalle): string => {
-    const lineLength = A7_CONFIG.charactersPerLine
+  const formatearParaPOSA7 = (factura: Factura | FacturaDetalle, fontSize: keyof PrintFontSize = 'large'): string => {
+    const sizeMultiplier = FONT_SIZES[fontSize];
+    const baseLineLength = A7_CONFIG.charactersPerLine;
+    const lineLength = Math.floor(baseLineLength / sizeMultiplier);
+    
+    // Función para repetir caracteres considerando el tamaño de fuente
+    const repeatChar = (char: string, length: number): string => {
+      return char.repeat(Math.floor(length * sizeMultiplier));
+    };
 
     const centerText = (text: string): string => {
-      if (text.length >= lineLength) return text.substring(0, lineLength)
-      const spaces = Math.floor((lineLength - text.length) / 2)
-      return " ".repeat(spaces) + text
+      if (text.length >= lineLength) return text.substring(0, lineLength);
+      const spaces = Math.floor((lineLength - text.length) / 2);
+      return " ".repeat(spaces) + text;
     }
 
-    const line = "=".repeat(lineLength)
-    const dashLine = "-".repeat(lineLength)
+    const line = repeatChar("=", lineLength)
+    const dashLine = repeatChar("-", lineLength)
 
     let contenido = `${line}
 ${centerText("INVERSIONES MEJIA")}
@@ -265,72 +286,6 @@ ${line}
     }
   }
 
-  const imprimirFactura = async (factura: Factura | FacturaDetalle) => {
-    setImprimiendo(factura.id_factura);
-
-    try {
-      // Generar contenido para POS en formato ISO A7
-      const contenidoPOS = formatearParaPOSA7(factura);
-      
-      // Verificar disponibilidad de APIs de impresión
-      const apisDisponibles = detectarAPIsImpresion();
-      
-      if (apisDisponibles.length === 0) {
-        // No hay APIs de impresión disponibles, usar vista previa
-        await mostrarVistaPreviaA7(factura, contenidoPOS);
-        return;
-      }
-
-      // Intentar con cada API disponible
-      let impresionExitosa = false;
-      
-      for (const api of apisDisponibles) {
-        try {
-          switch (api) {
-            case 'usb':
-              impresionExitosa = await intentarImpresionUSB(contenidoPOS);
-              break;
-            case 'serial':
-              impresionExitosa = await intentarImpresionSerial(contenidoPOS);
-              break;
-            case 'posPrinter':
-              impresionExitosa = await intentarImpresionPOS(contenidoPOS, factura);
-              break;
-            case 'starWebPrint':
-              impresionExitosa = await intentarImpresionStar(contenidoPOS);
-              break;
-            case 'epson':
-              impresionExitosa = await intentarImpresionEpson(contenidoPOS);
-              break;
-            case 'printerAPI':
-              impresionExitosa = await intentarImpresionAPI(contenidoPOS);
-              break;
-          }
-          
-          if (impresionExitosa) {
-            alert("Factura impresa correctamente");
-            return;
-          }
-        } catch (error) {
-          console.error(`Error con API ${api}:`, error);
-          // Continuar con la siguiente API
-        }
-      }
-
-      // Si ninguna API funcionó, mostrar vista previa
-      if (!impresionExitosa) {
-        await mostrarVistaPreviaA7(factura, contenidoPOS);
-      }
-    } catch (error) {
-      console.error("Error al imprimir factura:", error);
-      const errorMessage = error instanceof Error ? error.message : "Error desconocido";
-      alert(`Error al intentar imprimir: ${errorMessage}. Por favor, verifica la conexión de la impresora.`);
-    } finally {
-      setImprimiendo(null);
-      await posprinter.disconnect();
-    }
-  };
-
   // Función para detectar APIs de impresión disponibles
   const detectarAPIsImpresion = (): string[] => {
     const apis: string[] = [];
@@ -358,7 +313,7 @@ ${line}
       if (!connected) return false;
       
       const printOptions: POSPrintOptions = {
-        fontSize: "small",
+        fontSize: "large",
         alignment: "left",
         bold: false,
         cutPaper: true,
@@ -378,7 +333,7 @@ ${line}
       if (!connected) return false;
       
       const printOptions: POSPrintOptions = {
-        fontSize: "small",
+        fontSize: "large",
         alignment: "left",
         bold: false,
         cutPaper: true,
@@ -464,7 +419,7 @@ ${line}
           <style>
             body { 
               font-family: 'Courier New', monospace; 
-              font-size: 12px; 
+              font-size: 14px; 
               width: ${A7_CONFIG.width}mm;
               margin: 0;
               padding: ${A7_CONFIG.marginLeft}mm;
@@ -478,7 +433,7 @@ ${line}
               }
               body { 
                 width: ${A7_CONFIG.printableWidth}mm;
-                font-size: 11px;
+                font-size: 13px;
               }
             }
             pre {
@@ -530,9 +485,9 @@ ${line}
         </head>
         <body>
           <div class="status-message">
-            <strong></strong><br>
-            .<br>
-            .
+            <strong>Vista previa optimizada para impresora POS A7</strong><br>
+            Tamaño de letra aumentado para mejor legibilidad<br>
+            Seleccione "Imprimir en POS" y elija su impresora
           </div>
           <pre>${contenido}</pre>
           <div class="qr-code">
@@ -570,6 +525,77 @@ ${line}
     }
     
     return contenido;
+  };
+
+  // Función para imprimir con tamaño personalizado
+  const imprimirConTamañoPersonalizado = async (factura: Factura | FacturaDetalle, tamaño: keyof PrintFontSize) => {
+    setImprimiendo(factura.id_factura);
+
+    try {
+      // Generar contenido para POS con el tamaño especificado
+      const contenidoPOS = formatearParaPOSA7(factura, tamaño);
+      
+      // Verificar disponibilidad de APIs de impresión
+      const apisDisponibles = detectarAPIsImpresion();
+      
+      if (apisDisponibles.length === 0) {
+        // No hay APIs de impresión disponibles, usar vista previa
+        await mostrarVistaPreviaA7(factura, contenidoPOS);
+        return;
+      }
+
+      // Intentar con cada API disponible
+      let impresionExitosa = false;
+      
+      for (const api of apisDisponibles) {
+        try {
+          switch (api) {
+            case 'usb':
+              impresionExitosa = await intentarImpresionUSB(contenidoPOS);
+              break;
+            case 'serial':
+              impresionExitosa = await intentarImpresionSerial(contenidoPOS);
+              break;
+            case 'posPrinter':
+              impresionExitosa = await intentarImpresionPOS(contenidoPOS, factura);
+              break;
+            case 'starWebPrint':
+              impresionExitosa = await intentarImpresionStar(contenidoPOS);
+              break;
+            case 'epson':
+              impresionExitosa = await intentarImpresionEpson(contenidoPOS);
+              break;
+            case 'printerAPI':
+              impresionExitosa = await intentarImpresionAPI(contenidoPOS);
+              break;
+          }
+          
+          if (impresionExitosa) {
+            alert("Factura impresa correctamente");
+            return;
+          }
+        } catch (error) {
+          console.error(`Error con API ${api}:`, error);
+          // Continuar con la siguiente API
+        }
+      }
+
+      // Si ninguna API funcionó, mostrar vista previa
+      if (!impresionExitosa) {
+        await mostrarVistaPreviaA7(factura, contenidoPOS);
+      }
+    } catch (error) {
+      console.error("Error al imprimir factura:", error);
+      const errorMessage = error instanceof Error ? error.message : "Error desconocido";
+      alert(`Error al intentar imprimir: ${errorMessage}. Por favor, verifica la conexión de la impresora.`);
+    } finally {
+      setImprimiendo(null);
+      await posprinter.disconnect();
+    }
+  };
+
+  const imprimirFactura = async (factura: Factura | FacturaDetalle) => {
+    await imprimirConTamañoPersonalizado(factura, 'large');
   };
 
   const descargarFactura = (factura: Factura | FacturaDetalle) => {
@@ -938,6 +964,20 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}`.trim()
               <DialogDescription className="text-xs sm:text-sm">Información completa de la factura</DialogDescription>
             </DialogHeader>
 
+            {/* Selector de tamaño de fuente */}
+            <div className="flex items-center gap-2 mb-4">
+              <label className="text-sm">Tamaño de letra para impresión:</label>
+              <select 
+                value={tamañoFuente}
+                onChange={(e) => setTamañoFuente(e.target.value as keyof PrintFontSize)}
+                className="border rounded p-1 text-sm"
+              >
+                <option value="normal">Normal</option>
+                <option value="large">Grande</option>
+                <option value="title">Extra Grande</option>
+              </select>
+            </div>
+
             {facturaSeleccionada && (
               <div className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs sm:text-sm">
@@ -1016,7 +1056,7 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}`.trim()
                 <div className="flex flex-col sm:flex-row gap-2 pt-4">
                   <Button
                     variant="outline"
-                    onClick={() => imprimirFactura(facturaSeleccionada)}
+                    onClick={() => imprimirConTamañoPersonalizado(facturaSeleccionada, tamañoFuente)}
                     className="flex-1"
                     disabled={imprimiendo === facturaSeleccionada.id_factura}
                   >
@@ -1025,7 +1065,7 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}`.trim()
                     ) : (
                       <Printer className="h-4 w-4 mr-2" />
                     )}
-                    Imprimir
+                    Imprimir ({tamañoFuente})
                   </Button>
                   <Button variant="outline" onClick={() => descargarFactura(facturaSeleccionada)} className="flex-1">
                     <Download className="h-4 w-4 mr-2" />
