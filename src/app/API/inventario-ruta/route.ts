@@ -8,7 +8,7 @@ interface InventarioRuta {
   id_inventario_ruta?: number;
   id_ruta: number;
   id_producto: number;
-  cantidad: number;
+  cantidad: number; // Cambiar a number para soportar decimales
   fecha_actualizacion?: string;
 }
 
@@ -87,7 +87,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (requestData.cantidad < 0) {
+    // Cambiar validación para permitir decimales
+    if (isNaN(parseFloat(requestData.cantidad.toString())) || parseFloat(requestData.cantidad.toString()) < 0) {
       return NextResponse.json(
         { success: false, error: "Cantidad inválida", details: "La cantidad debe ser un número positivo" },
         { status: 400 }
@@ -117,11 +118,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Crear nuevo registro
+    // Crear nuevo registro - Cambiar a sql.Decimal para soportar decimales
     const result = await pool.request()
       .input('id_ruta', sql.Int, requestData.id_ruta)
       .input('id_producto', sql.Int, requestData.id_producto)
-      .input('cantidad', sql.Int, requestData.cantidad)
+      .input('cantidad', sql.Decimal(10, 2), parseFloat(requestData.cantidad.toString())) // Cambiado a Decimal
       .query(`
         INSERT INTO Inventario_Ruta (id_ruta, id_producto, cantidad, fecha_actualizacion)
         OUTPUT INSERTED.id_inventario_ruta
@@ -182,7 +183,9 @@ export async function PUT(req: NextRequest) {
       );
     }
 
-    if (requestData.cantidad !== undefined && requestData.cantidad < 0) {
+    // Cambiar validación para permitir decimales
+    if (requestData.cantidad !== undefined && 
+        (isNaN(parseFloat(requestData.cantidad.toString())) || parseFloat(requestData.cantidad.toString()) < 0)) {
       return NextResponse.json(
         { success: false, error: "Cantidad inválida", details: "La cantidad debe ser un número positivo" },
         { status: 400 }
@@ -203,10 +206,10 @@ export async function PUT(req: NextRequest) {
       );
     }
 
-    // Actualizar registro
+    // Actualizar registro - Cambiar a sql.Decimal para soportar decimales
     await pool.request()
       .input('id', sql.Int, requestData.id_inventario_ruta)
-      .input('cantidad', sql.Int, requestData.cantidad)
+      .input('cantidad', sql.Decimal(10, 2), parseFloat(requestData.cantidad.toString())) // Cambiado a Decimal
       .query(`
         UPDATE Inventario_Ruta 
         SET 

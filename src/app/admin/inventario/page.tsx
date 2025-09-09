@@ -44,7 +44,7 @@ export default function InventarioPorRutaPage() {
   const [formData, setFormData] = useState({
     id_ruta: 0,
     id_producto: 0,
-    cantidad: 0,
+    cantidad: "0", // Cambiado a string para validación
   })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
@@ -83,6 +83,15 @@ export default function InventarioPorRutaPage() {
     cargarDatos()
   }, [])
 
+  // Validar formato de cantidad (solo enteros o .5)
+  const validarCantidad = (valor: string): boolean => {
+    const num = parseFloat(valor);
+    if (isNaN(num) || num < 0) return false;
+    
+    // Verificar si es entero o tiene .5
+    return num % 1 === 0 || num % 1 === 0.5;
+  }
+
   // Filtrar inventarios por ruta seleccionada
   const inventariosFiltrados = rutaSeleccionada === "todas" 
     ? inventarios 
@@ -104,14 +113,14 @@ export default function InventarioPorRutaPage() {
       setFormData({
         id_ruta: inventario.id_ruta,
         id_producto: inventario.id_producto,
-        cantidad: inventario.cantidad,
+        cantidad: inventario.cantidad.toString(),
       })
     } else {
       setInventarioEditando(null)
       setFormData({
         id_ruta: rutas[0]?.id_ruta || 0,
         id_producto: productos[0]?.id_producto || 0,
-        cantidad: 0,
+        cantidad: "0",
       })
     }
     setModalAbierto(true)
@@ -128,10 +137,12 @@ export default function InventarioPorRutaPage() {
   const guardarInventario = async () => {
     try {
       // Validación básica
-      if (formData.cantidad < 0) {
-        setError("La cantidad debe ser un número positivo")
+      if (!validarCantidad(formData.cantidad)) {
+        setError("La cantidad debe ser un número entero o con .5 (ej: 1, 2.5, 3.5)")
         return
       }
+
+      const cantidadDecimal = parseFloat(formData.cantidad);
 
       if (formData.id_ruta === 0 || formData.id_producto === 0) {
         setError("Debe seleccionar una ruta y un producto")
@@ -145,12 +156,12 @@ export default function InventarioPorRutaPage() {
       const requestData = inventarioEditando
         ? {
             id_inventario_ruta: inventarioEditando.id_inventario_ruta,
-            cantidad: formData.cantidad
+            cantidad: cantidadDecimal
           }
         : {
             id_ruta: formData.id_ruta,
             id_producto: formData.id_producto,
-            cantidad: formData.cantidad
+            cantidad: cantidadDecimal
           }
 
       const response = await fetch(endpoint, {
@@ -184,12 +195,11 @@ export default function InventarioPorRutaPage() {
     }
 
     try {
-      const response = await fetch(`/API/inventario-ruta`, {
+      const response = await fetch(`/API/inventario-ruta?id=${id}`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ id_inventario_ruta: id })
+        }
       })
 
       if (!response.ok) {
@@ -210,6 +220,11 @@ export default function InventarioPorRutaPage() {
     if (cantidad <= 5) return { estado: "bajo", color: "secondary" }
     if (cantidad <= 10) return { estado: "medio", color: "outline" }
     return { estado: "alto", color: "default" }
+  }
+
+  // Formatear cantidad para mostrar (.0 se muestra como entero)
+  const formatearCantidad = (cantidad: number) => {
+    return cantidad % 1 === 0 ? cantidad.toString() : cantidad.toFixed(1);
   }
 
   if (loading) {
@@ -287,7 +302,7 @@ export default function InventarioPorRutaPage() {
               <CardContent>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {inventariosRuta
-                    .sort((a, b) => a.id_producto - b.id_producto) // Ordenar por ID en lugar de nombre
+                    .sort((a, b) => a.id_producto - b.id_producto)
                     .map((inventario) => {
                       const stockInfo = obtenerEstadoStock(inventario.cantidad)
                       return (
@@ -299,7 +314,7 @@ export default function InventarioPorRutaPage() {
                                 <p className="text-sm text-gray-600">ID: {inventario.id_producto} - {inventario.producto_codigo}</p>
                               </div>
                               <Badge variant={stockInfo.color as "default" | "destructive" | "outline" | "secondary" | null | undefined}>
-                                {inventario.cantidad}
+                                {formatearCantidad(inventario.cantidad)}
                               </Badge>
                             </div>
 
@@ -407,7 +422,7 @@ export default function InventarioPorRutaPage() {
                       </SelectTrigger>
                       <SelectContent>
                         {productos
-                          .sort((a, b) => a.id_producto - b.id_producto) // Ordenar por ID en lugar de nombre
+                          .sort((a, b) => a.id_producto - b.id_producto)
                           .map((producto) => (
                             <SelectItem key={producto.id_producto} value={producto.id_producto.toString()}>
                               ID: {producto.id_producto} - {producto.nombre} ({producto.codigo})
@@ -426,8 +441,9 @@ export default function InventarioPorRutaPage() {
                 <Input
                   id="cantidad"
                   type="number"
+                  step="0.5" // Permitir solo incrementos de 0.5
                   value={formData.cantidad}
-                  onChange={(e) => setFormData({ ...formData, cantidad: Number(e.target.value) || 0 })}
+                  onChange={(e) => setFormData({ ...formData, cantidad: e.target.value })}
                   className="col-span-3"
                   placeholder="0"
                   min="0"
