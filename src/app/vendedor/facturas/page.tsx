@@ -1,6 +1,7 @@
+
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useCallback, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -8,10 +9,11 @@ import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { ArrowLeft, FileText, Eye, Printer, Download, Calendar, X, Search, Loader2 } from "lucide-react"
+import { ArrowLeft, FileText, Eye, Printer, Download, Search, Loader2 } from "lucide-react"
 import { requireAuth } from "@/lib/auth"
 import { posprinter, type POSPrintOptions, A7_CONFIG } from "@/lib/pos-printer"
 
+// Interfaces (mantenidas del código original)
 interface Factura {
   id_factura: number
   numero_factura: string
@@ -50,7 +52,6 @@ interface UsuarioAutenticado {
   apellido: string
 }
 
-// Interface para APIs de impresión POS
 interface POSPrinterAPI {
   printText?: (text: string) => Promise<boolean>
   printReceipt?: (text: string) => Promise<boolean>
@@ -59,7 +60,6 @@ interface POSPrinterAPI {
   isConnected?: () => boolean
 }
 
-// Interfaces para APIs específicas de fabricantes
 interface StarWebPrintAPI {
   print: (commands: { append: string }[]) => void
 }
@@ -69,18 +69,13 @@ interface EpsonAPI {
   print: () => void
 }
 
-// Extender Window para incluir APIs POS
 declare global {
   interface Window {
-    POS?: {
-      printer?: POSPrinterAPI
-    }
+    POS?: { printer?: POSPrinterAPI }
     printerAPI?: POSPrinterAPI
     StarWebPrint?: StarWebPrintAPI
     Epson?: EpsonAPI
-    Print?: {
-      printText: (text: string) => void
-    }
+    Print?: { printText: (text: string) => void }
     bluetoothPrint?: (text: string) => void
     printToTerminal?: (text: string) => void
     getPrinterStatus?: () => Promise<string>
@@ -88,21 +83,19 @@ declare global {
   }
 }
 
-// AbortController para cancelar solicitudes pendientes
 let abortController = new AbortController()
 
-// Configuración de tamaño de fuente para impresión
 interface PrintFontSize {
-  normal: number;
-  large: number;
-  title: number;
+  normal: number
+  large: number
+  title: number
 }
 
 const FONT_SIZES: PrintFontSize = {
-  normal: 1,    // Tamaño normal (1x)
-  large: 1.5,   // Tamaño grande (1.5x)
-  title: 2      // Tamaño título (2x)
-};
+  normal: 1,
+  large: 1.5,
+  title: 2
+}
 
 export default function FacturasVendedor() {
   const [facturas, setFacturas] = useState<Factura[]>([])
@@ -113,15 +106,41 @@ export default function FacturasVendedor() {
   const [error, setError] = useState("")
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
-  const [fechaInicio, setFechaInicio] = useState("")
-  const [fechaFin, setFechaFin] = useState("")
-  const [filtroActivo, setFiltroActivo] = useState(false)
   const [usuarioAutenticado, setUsuarioAutenticado] = useState<UsuarioAutenticado | null>(null)
   const [terminoBusqueda, setTerminoBusqueda] = useState("")
   const [cargandoFactura, setCargandoFactura] = useState<number | null>(null)
   const [imprimiendo, setImprimiendo] = useState<number | null>(null)
-  const [tamañoFuente, setTamañoFuente] = useState<keyof PrintFontSize>('large');
+  const [tamañoFuente, setTamañoFuente] = useState<keyof PrintFontSize>('large')
   const router = useRouter()
+
+  // Función para obtener la fecha actual en la zona horaria de Honduras (America/Tegucigalpa)
+  const getCurrentDateInTimezone = useCallback((timeZone: string): string => {
+    const now = new Date()
+    const formatter = new Intl.DateTimeFormat('en-CA', { timeZone })
+    const parts = formatter.formatToParts(now)
+    const year = parts.find((p) => p.type === 'year')?.value || ''
+    const month = parts.find((p) => p.type === 'month')?.value.padStart(2, '0') || ''
+    const day = parts.find((p) => p.type === 'day')?.value.padStart(2, '0') || ''
+    return `${year}-${month}-${day}`
+  }, [])
+
+  // Fecha actual en formato YYYY-MM-DD en zona horaria de Honduras
+  const currentDate = getCurrentDateInTimezone('America/Tegucigalpa')
+
+  // Función para formatear fechas de manera consistente en zona horaria de Honduras
+  const formatDateForDisplay = useCallback((dateString: string): string => {
+    const date = new Date(dateString + 'T00:00:00') // Asumir inicio del día
+    return date.toLocaleDateString("es-HN", {
+      timeZone: 'America/Tegucigalpa',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    })
+  }, [])
+
+  // Memorizar cálculos de totales para optimizar rendimiento
+  const totalFacturado = useMemo(() => facturasFiltradas.reduce((sum, f) => sum + f.monto_total, 0), [facturasFiltradas])
+  const facturasActivas = useMemo(() => facturasFiltradas.filter((f) => !f.anulada).length, [facturasFiltradas])
 
   const cargarFacturas = useCallback(
     async (idPersonal: number) => {
@@ -131,11 +150,7 @@ export default function FacturasVendedor() {
       try {
         setLoading(true)
         setError("")
-        let url = `/API/Factura?page=${currentPage}&pageSize=10&id_personal=${idPersonal}`
-
-        if (filtroActivo && fechaInicio && fechaFin) {
-          url += `&fechaInicio=${fechaInicio}&fechaFin=${fechaFin}`
-        }
+        const url = `/API/Factura?page=${currentPage}&pageSize=10&id_personal=${idPersonal}&fechaInicio=${currentDate}&fechaFin=${currentDate}`
 
         const response = await fetch(url, {
           signal: abortController.signal,
@@ -165,7 +180,7 @@ export default function FacturasVendedor() {
         setLoading(false)
       }
     },
-    [currentPage, filtroActivo, fechaInicio, fechaFin],
+    [currentPage, currentDate],
   )
 
   useEffect(() => {
@@ -175,6 +190,7 @@ export default function FacturasVendedor() {
         setUsuarioAutenticado(user)
       } catch (error) {
         console.error("Error al obtener el usuario autenticado:", error)
+        setError("No se pudo autenticar al usuario. Por favor, inicia sesión nuevamente.")
         router.push("/login")
       }
     }
@@ -183,18 +199,21 @@ export default function FacturasVendedor() {
   }, [router])
 
   useEffect(() => {
-    if (usuarioAutenticado && usuarioAutenticado.id_personal) {
+    if (usuarioAutenticado?.id_personal) {
       cargarFacturas(usuarioAutenticado.id_personal)
     }
-  }, [usuarioAutenticado, currentPage, filtroActivo, fechaInicio, fechaFin, cargarFacturas])
+  }, [usuarioAutenticado, currentPage, cargarFacturas])
 
   useEffect(() => {
     if (terminoBusqueda) {
       const termino = terminoBusqueda.toLowerCase()
-      const filtradas = facturas.filter(
-        (factura) =>
-          factura.numero_factura.toLowerCase().includes(termino) ||
-          factura.nombre_cliente.toLowerCase().includes(termino),
+      const filtradas = facturas.filter((factura) =>
+        [
+          factura.numero_factura.toLowerCase(),
+          factura.nombre_cliente.toLowerCase(),
+          factura.codigo_cai.toLowerCase(),
+          ...(factura.productos?.map((p) => p.nombre.toLowerCase()) || []),
+        ].some((field) => field.includes(termino)),
       )
       setFacturasFiltradas(filtradas)
     } else {
@@ -202,21 +221,19 @@ export default function FacturasVendedor() {
     }
   }, [terminoBusqueda, facturas])
 
-  // Formatear texto para impresión POS
   const formatearParaPOSA7 = (factura: Factura | FacturaDetalle, fontSize: keyof PrintFontSize = 'large'): string => {
-    const sizeMultiplier = FONT_SIZES[fontSize];
-    const baseLineLength = A7_CONFIG.charactersPerLine;
-    const lineLength = Math.floor(baseLineLength / sizeMultiplier);
+    const sizeMultiplier = FONT_SIZES[fontSize]
+    const baseLineLength = A7_CONFIG.charactersPerLine
+    const lineLength = Math.floor(baseLineLength / sizeMultiplier)
     
-    // Función para repetir caracteres considerando el tamaño de fuente
     const repeatChar = (char: string, length: number): string => {
-      return char.repeat(Math.floor(length * sizeMultiplier));
-    };
+      return char.repeat(Math.floor(length * sizeMultiplier))
+    }
 
     const centerText = (text: string): string => {
-      if (text.length >= lineLength) return text.substring(0, lineLength);
-      const spaces = Math.floor((lineLength - text.length) / 2);
-      return " ".repeat(spaces) + text;
+      if (text.length >= lineLength) return text.substring(0, lineLength)
+      const spaces = Math.floor((lineLength - text.length) / 2)
+      return " ".repeat(spaces) + text
     }
 
     const line = repeatChar("=", lineLength)
@@ -227,7 +244,7 @@ ${centerText("INVERSIONES MEJIA")}
 ${centerText("FACTURA POS")}
 ${line}
 No: ${factura.numero_factura}
-Fecha: ${formatearFecha(factura.fecha_emision).substring(0, 14)}
+Fecha: ${formatDateForDisplay(factura.fecha_emision).substring(0, 14)}
 ${dashLine}
 Cliente:
 ${(factura.nombre_cliente || "N/A").substring(0, lineLength)}
@@ -256,7 +273,7 @@ ${line}
 ${centerText("Gracias por su compra")}
 ${centerText("Sistema POS A7")}
 ${line}
-\n\n\n` // Avanzar papel para cortar
+\n\n\n`
 
     return contenido
   }
@@ -286,130 +303,106 @@ ${line}
     }
   }
 
-  // Función para detectar APIs de impresión disponibles
   const detectarAPIsImpresion = (): string[] => {
-    const apis: string[] = [];
-    
-    // Detectar APIs específicas
-    if (typeof window.POS?.printer?.printText === 'function') apis.push('posPrinter');
-    if (typeof window.printerAPI?.printText === 'function') apis.push('printerAPI');
-    if (typeof window.StarWebPrint?.print === 'function') apis.push('starWebPrint');
-    if (typeof window.Epson?.append === 'function') apis.push('epson');
-    if (typeof window.Print?.printText === 'function') apis.push('printText');
-    if (typeof window.bluetoothPrint === 'function') apis.push('bluetooth');
-    if (typeof window.printToTerminal === 'function') apis.push('terminal');
-    
-    // APIs de la librería posprinter
-    if (typeof posprinter.initUSB === 'function') apis.push('usb');
-    if (typeof posprinter.initSerial === 'function') apis.push('serial');
-    
-    return apis;
-  };
+    const apis: string[] = []
+    if (typeof window.POS?.printer?.printText === 'function') apis.push('posPrinter')
+    if (typeof window.printerAPI?.printText === 'function') apis.push('printerAPI')
+    if (typeof window.StarWebPrint?.print === 'function') apis.push('starWebPrint')
+    if (typeof window.Epson?.append === 'function') apis.push('epson')
+    if (typeof window.Print?.printText === 'function') apis.push('printText')
+    if (typeof window.bluetoothPrint === 'function') apis.push('bluetooth')
+    if (typeof window.printToTerminal === 'function') apis.push('terminal')
+    if (typeof posprinter.initUSB === 'function') apis.push('usb')
+    if (typeof posprinter.initSerial === 'function') apis.push('serial')
+    return apis
+  }
 
-  // Función para intentar impresión USB
   const intentarImpresionUSB = async (contenido: string): Promise<boolean> => {
     try {
-      const connected = await posprinter.initUSB();
-      if (!connected) return false;
-      
+      const connected = await posprinter.initUSB()
+      if (!connected) return false
       const printOptions: POSPrintOptions = {
         fontSize: "large",
         alignment: "left",
         bold: false,
         cutPaper: true,
         feedLines: 3
-      };
-      
-      return await posprinter.printReceipt(contenido, printOptions);
+      }
+      return await posprinter.printReceipt(contenido, printOptions)
     } catch {
-      return false;
+      return false
     }
-  };
+  }
 
-  // Función para intentar impresión Serial/Bluetooth
   const intentarImpresionSerial = async (contenido: string): Promise<boolean> => {
     try {
-      const connected = await posprinter.initSerial();
-      if (!connected) return false;
-      
+      const connected = await posprinter.initSerial()
+      if (!connected) return false
       const printOptions: POSPrintOptions = {
         fontSize: "large",
         alignment: "left",
         bold: false,
         cutPaper: true,
         feedLines: 3
-      };
-      
-      return await posprinter.printReceipt(contenido, printOptions);
+      }
+      return await posprinter.printReceipt(contenido, printOptions)
     } catch {
-      return false;
+      return false
     }
-  };
+  }
 
-  // Función para intentar impresión con API POS
   const intentarImpresionPOS = async (contenido: string, factura: Factura | FacturaDetalle): Promise<boolean> => {
-    if (!window.POS?.printer?.printText) return false;
-    
+    if (!window.POS?.printer?.printText) return false
     try {
-      // Agregar QR code si está disponible en la API
-      const contenidoConQR = await agregarQRCodeSiEsPosible(contenido, factura);
-      return await window.POS.printer.printText(contenidoConQR);
+      const contenidoConQR = await agregarQRCodeSiEsPosible(contenido, factura)
+      return await window.POS.printer.printText(contenidoConQR)
     } catch {
-      return await window.POS.printer.printText(contenido);
+      return await window.POS.printer.printText(contenido)
     }
-  };
+  }
 
-  // Función para intentar impresión con StarWebPrint
   const intentarImpresionStar = async (contenido: string): Promise<boolean> => {
-    if (!window.StarWebPrint) return false;
-    
+    if (!window.StarWebPrint) return false
     try {
-      window.StarWebPrint.print([{ append: contenido }]);
-      return true;
+      window.StarWebPrint.print([{ append: contenido }])
+      return true
     } catch {
-      return false;
+      return false
     }
-  };
+  }
 
-  // Función para intentar impresión con Epson
   const intentarImpresionEpson = async (contenido: string): Promise<boolean> => {
-    if (!window.Epson) return false;
-    
+    if (!window.Epson) return false
     try {
-      window.Epson.append(contenido);
-      window.Epson.print();
-      return true;
+      window.Epson.append(contenido)
+      window.Epson.print()
+      return true
     } catch {
-      return false;
+      return false
     }
-  };
+  }
 
-  // Función para intentar impresión con printerAPI
   const intentarImpresionAPI = async (contenido: string): Promise<boolean> => {
-    if (!window.printerAPI?.printText) return false;
-    
+    if (!window.printerAPI?.printText) return false
     try {
-      return await window.printerAPI.printText(contenido);
+      return await window.printerAPI.printText(contenido)
     } catch {
-      return false;
+      return false
     }
-  };
+  }
 
-  // Función para mostrar vista previa A7
   const mostrarVistaPreviaA7 = async (factura: Factura | FacturaDetalle, contenido: string): Promise<void> => {
-    console.log("Usando fallback de vista previa optimizada para A7");
-    
-    // Generar QR para la vista previa
-    let qrDataURL = "";
+    console.log("Usando fallback de vista previa optimizada para A7")
+    let qrDataURL = ""
     try {
-      qrDataURL = await posprinter.generateQRCode(`FACT-${factura.numero_factura}-${factura.monto_total}`);
+      qrDataURL = await posprinter.generateQRCode(`FACT-${factura.numero_factura}-${factura.monto_total}`)
     } catch (qrError) {
-      console.error("Error al generar QR para vista previa:", qrError);
+      console.error("Error al generar QR para vista previa:", qrError)
     }
 
-    const ventanaImpresion = window.open("", "_blank");
+    const ventanaImpresion = window.open("", "_blank")
     if (!ventanaImpresion) {
-      throw new Error("No se pudo abrir la ventana de impresión. Verifica los bloqueadores de ventanas emergentes.");
+      throw new Error("No se pudo abrir la ventana de impresión. Verifica los bloqueadores de ventanas emergentes.")
     }
 
     ventanaImpresion.document.write(`
@@ -421,7 +414,7 @@ ${line}
               font-family: 'Courier New', monospace; 
               font-size: 14px; 
               width: ${A7_CONFIG.width}mm;
-              margin: 0;
+              margin: 0 auto;
               padding: ${A7_CONFIG.marginLeft}mm;
               background: white;
               line-height: 1.4;
@@ -480,6 +473,7 @@ ${line}
               font-size: 14px;
               padding: 6px 10px;
               margin-right: 10px;
+              cursor: pointer;
             }
           </style>
         </head>
@@ -498,111 +492,94 @@ ${line}
             <button onclick="window.close()">Cancelar</button>
           </div>
           <script>
-            // Intentar imprimir automáticamente si está en un entorno específico
             if (window.location.search.includes('autoPrint=true')) {
               window.print();
             }
           </script>
         </body>
       </html>
-    `);
-    ventanaImpresion.document.close();
-    alert("Ventana de vista previa A7 abierta. Selecciona tu impresora POS y confirma la impresión.");
-  };
+    `)
+    ventanaImpresion.document.close()
+    alert("Ventana de vista previa A7 abierta. Selecciona tu impresora POS y confirma la impresión.")
+  }
 
-  // Función para agregar QR code si es posible
   const agregarQRCodeSiEsPosible = async (contenido: string, factura: Factura | FacturaDetalle): Promise<string> => {
     try {
-      const qrData = `FACT-${factura.numero_factura}-${factura.monto_total}`;
-      const qrCode = await posprinter.generateQRCode(qrData);
-      
-      // Si tenemos un código QR, agregarlo al contenido
+      const qrData = `FACT-${factura.numero_factura}-${factura.monto_total}`
+      const qrCode = await posprinter.generateQRCode(qrData)
       if (qrCode) {
-        return contenido + `\n\n[QR Code: ${qrData}]`;
+        return contenido + `\n\n[QR Code: ${qrData}]`
       }
     } catch (error) {
-      console.error("Error al generar QR code:", error);
+      console.error("Error al generar QR code:", error)
     }
-    
-    return contenido;
-  };
+    return contenido
+  }
 
-  // Función para imprimir con tamaño personalizado
   const imprimirConTamañoPersonalizado = async (factura: Factura | FacturaDetalle, tamaño: keyof PrintFontSize) => {
-    setImprimiendo(factura.id_factura);
-
+    setImprimiendo(factura.id_factura)
     try {
-      // Generar contenido para POS con el tamaño especificado
-      const contenidoPOS = formatearParaPOSA7(factura, tamaño);
-      
-      // Verificar disponibilidad de APIs de impresión
-      const apisDisponibles = detectarAPIsImpresion();
+      const contenidoPOS = formatearParaPOSA7(factura, tamaño)
+      const apisDisponibles = detectarAPIsImpresion()
       
       if (apisDisponibles.length === 0) {
-        // No hay APIs de impresión disponibles, usar vista previa
-        await mostrarVistaPreviaA7(factura, contenidoPOS);
-        return;
+        await mostrarVistaPreviaA7(factura, contenidoPOS)
+        return
       }
 
-      // Intentar con cada API disponible
-      let impresionExitosa = false;
-      
+      let impresionExitosa = false
       for (const api of apisDisponibles) {
         try {
           switch (api) {
             case 'usb':
-              impresionExitosa = await intentarImpresionUSB(contenidoPOS);
-              break;
+              impresionExitosa = await intentarImpresionUSB(contenidoPOS)
+              break
             case 'serial':
-              impresionExitosa = await intentarImpresionSerial(contenidoPOS);
-              break;
+              impresionExitosa = await intentarImpresionSerial(contenidoPOS)
+              break
             case 'posPrinter':
-              impresionExitosa = await intentarImpresionPOS(contenidoPOS, factura);
-              break;
+              impresionExitosa = await intentarImpresionPOS(contenidoPOS, factura)
+              break
             case 'starWebPrint':
-              impresionExitosa = await intentarImpresionStar(contenidoPOS);
-              break;
+              impresionExitosa = await intentarImpresionStar(contenidoPOS)
+              break
             case 'epson':
-              impresionExitosa = await intentarImpresionEpson(contenidoPOS);
-              break;
+              impresionExitosa = await intentarImpresionEpson(contenidoPOS)
+              break
             case 'printerAPI':
-              impresionExitosa = await intentarImpresionAPI(contenidoPOS);
-              break;
+              impresionExitosa = await intentarImpresionAPI(contenidoPOS)
+              break
           }
-          
           if (impresionExitosa) {
-            alert("Factura impresa correctamente");
-            return;
+            alert("Factura impresa correctamente")
+            return
           }
         } catch (error) {
-          console.error(`Error con API ${api}:`, error);
-          // Continuar con la siguiente API
+          console.error(`Error con API ${api}:`, error)
         }
       }
 
-      // Si ninguna API funcionó, mostrar vista previa
       if (!impresionExitosa) {
-        await mostrarVistaPreviaA7(factura, contenidoPOS);
+        await mostrarVistaPreviaA7(factura, contenidoPOS)
       }
     } catch (error) {
-      console.error("Error al imprimir factura:", error);
-      const errorMessage = error instanceof Error ? error.message : "Error desconocido";
-      alert(`Error al intentar imprimir: ${errorMessage}. Por favor, verifica la conexión de la impresora.`);
+      console.error("Error al imprimir factura:", error)
+      const errorMessage = error instanceof Error ? error.message : "Error desconocido"
+      alert(`Error al intentar imprimir: ${errorMessage}. Por favor, verifica la conexión de la impresora.`)
     } finally {
-      setImprimiendo(null);
-      await posprinter.disconnect();
+      setImprimiendo(null)
+      await posprinter.disconnect()
     }
-  };
+  }
 
   const imprimirFactura = async (factura: Factura | FacturaDetalle) => {
-    await imprimirConTamañoPersonalizado(factura, 'large');
-  };
+    await imprimirConTamañoPersonalizado(factura, 'large')
+  }
 
   const descargarFactura = (factura: Factura | FacturaDetalle) => {
     console.log("Descargando factura:", factura.numero_factura)
-
     const contenido = `FACTURA: ${factura.numero_factura}
-FECHA: ${formatearFecha(factura.fecha_emision)}
+FECHA: ${formatDateForDisplay(factura.fecha_emision)}
 CLIENTE: ${factura.nombre_cliente || "N/A"}
 ${
   factura.productos && factura.productos.length > 0
@@ -654,34 +631,6 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}`.trim()
     }
   }
 
-  const totalFacturado = facturasFiltradas.reduce((sum, f) => sum + f.monto_total, 0)
-  const facturasActivas = facturasFiltradas.filter((f) => !f.anulada).length
-
-  const aplicarFiltroFecha = () => {
-    if (!fechaInicio || !fechaFin) {
-      setError("Por favor selecciona ambas fechas")
-      return
-    }
-
-    if (new Date(fechaInicio) > new Date(fechaFin)) {
-      setError("La fecha de inicio no puede ser mayor que la fecha de fin")
-      return
-    }
-
-    setCurrentPage(1)
-    setFiltroActivo(true)
-    setTerminoBusqueda("")
-    setError("")
-  }
-
-  const limpiarFiltro = () => {
-    setFechaInicio("")
-    setFechaFin("")
-    setFiltroActivo(false)
-    setCurrentPage(1)
-    setTerminoBusqueda("")
-  }
-
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -695,6 +644,7 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}`.trim()
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Encabezado mejorado con formato de fecha consistente */}
       <header className="bg-white shadow-sm border-b sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col sm:flex-row items-center justify-between py-4">
@@ -705,11 +655,15 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}`.trim()
               </Button>
               <div className="flex-1 text-center sm:text-left">
                 <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Mis Facturas</h1>
-                <p className="text-xs sm:text-sm text-gray-600">Facturas generadas por mí</p>
-                {usuarioAutenticado && (
+                <p className="text-xs sm:text-sm text-gray-600">
+                  Facturas generadas hoy ({formatDateForDisplay(currentDate)})
+                </p>
+                {usuarioAutenticado ? (
                   <p className="text-xs text-gray-500">
                     Vendedor: {usuarioAutenticado.nombre} {usuarioAutenticado.apellido}
                   </p>
+                ) : (
+                  <p className="text-xs text-red-500">No se encontró información del vendedor</p>
                 )}
               </div>
             </div>
@@ -724,7 +678,6 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}`.trim()
           </Alert>
         )}
 
-        {/* Buscador */}
         <Card className="mb-4">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
@@ -737,64 +690,12 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}`.trim()
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
               <Input
                 type="text"
-                placeholder="Buscar por número de factura o nombre de cliente..."
+                placeholder="Buscar por número, cliente, CAI o producto..."
                 value={terminoBusqueda}
                 onChange={(e) => setTerminoBusqueda(e.target.value)}
                 className="pl-10 text-sm"
               />
             </div>
-          </CardContent>
-        </Card>
-
-        <Card className="mb-4">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
-              <Calendar className="h-4 w-4 sm:h-5 sm:w-5" />
-              Filtrar por Fecha de Emisión
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-col gap-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1">Fecha Inicio</label>
-                  <Input
-                    type="date"
-                    value={fechaInicio}
-                    onChange={(e) => setFechaInicio(e.target.value)}
-                    className="w-full text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Fecha Fin</label>
-                  <Input
-                    type="date"
-                    value={fechaFin}
-                    onChange={(e) => setFechaFin(e.target.value)}
-                    className="w-full text-sm"
-                  />
-                </div>
-              </div>
-              <div className="flex flex-col sm:flex-row gap-2 sm:justify-end">
-                <Button onClick={aplicarFiltroFecha} disabled={!fechaInicio || !fechaFin} className="w-full sm:w-auto">
-                  Filtrar
-                </Button>
-                {filtroActivo && (
-                  <Button variant="outline" onClick={limpiarFiltro} className="w-full sm:w-auto bg-transparent">
-                    <X className="h-4 w-4 mr-2" />
-                    Limpiar
-                  </Button>
-                )}
-              </div>
-            </div>
-            {filtroActivo && (
-              <div className="mt-3 p-3 bg-blue-50 rounded-lg">
-                <p className="text-xs sm:text-sm text-blue-700">
-                  Mostrando facturas del {new Date(fechaInicio).toLocaleDateString("es-HN")} al{" "}
-                  {new Date(fechaFin).toLocaleDateString("es-HN")}
-                </p>
-              </div>
-            )}
           </CardContent>
         </Card>
 
@@ -917,9 +818,9 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}`.trim()
                 <FileText className="h-10 w-10 sm:h-12 sm:w-12 mx-auto text-gray-400 mb-4" />
                 <h3 className="text-base sm:text-lg font-medium text-gray-900 mb-2">No hay facturas</h3>
                 <p className="text-sm text-gray-600">
-                  {filtroActivo || terminoBusqueda
-                    ? "No se encontraron facturas con los filtros aplicados"
-                    : "No has generado ninguna factura aún"}
+                  {terminoBusqueda
+                    ? "No se encontraron facturas con el término de búsqueda"
+                    : "No has generado ninguna factura hoy"}
                 </p>
               </div>
             )}
@@ -964,7 +865,6 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}`.trim()
               <DialogDescription className="text-xs sm:text-sm">Información completa de la factura</DialogDescription>
             </DialogHeader>
 
-            {/* Selector de tamaño de fuente */}
             <div className="flex items-center gap-2 mb-4">
               <label className="text-sm">Tamaño de letra para impresión:</label>
               <select 
