@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useEffect, useState, useCallback, useMemo } from "react"
@@ -236,6 +235,31 @@ export default function FacturasVendedor() {
       return " ".repeat(spaces) + text
     }
 
+    // Función para dividir texto en múltiples líneas si es muy largo
+    const splitLongText = (text: string, maxLength: number): string[] => {
+      const words = text.split(' ')
+      const lines: string[] = []
+      let currentLine = ''
+
+      for (const word of words) {
+        if (currentLine.length + word.length + 1 <= maxLength) {
+          currentLine += (currentLine ? ' ' : '') + word
+        } else {
+          if (currentLine) lines.push(currentLine)
+          currentLine = word
+          // Si una palabra individual es más larga que maxLength, dividirla
+          if (currentLine.length > maxLength) {
+            while (currentLine.length > maxLength) {
+              lines.push(currentLine.substring(0, maxLength))
+              currentLine = currentLine.substring(maxLength)
+            }
+          }
+        }
+      }
+      if (currentLine) lines.push(currentLine)
+      return lines
+    }
+
     const line = repeatChar("=", lineLength)
     const dashLine = repeatChar("-", lineLength)
 
@@ -246,9 +270,17 @@ ${line}
 No: ${factura.numero_factura}
 Fecha: ${formatDateForDisplay(factura.fecha_emision).substring(0, 14)}
 ${dashLine}
-Cliente:
-${(factura.nombre_cliente || "N/A").substring(0, lineLength)}
-${dashLine}
+Cliente:`
+
+    // Mostrar el nombre completo del cliente, dividido en múltiples líneas si es necesario
+    const customerName = factura.nombre_cliente || "N/A"
+    const customerLines = splitLongText(customerName, lineLength)
+    
+    customerLines.forEach(line => {
+      contenido += `\n${line}`
+    })
+
+    contenido += `\n${dashLine}
 PRODUCTO${" ".repeat(Math.max(0, lineLength - 16))}CANT  TOTAL
 ${dashLine}`
 
