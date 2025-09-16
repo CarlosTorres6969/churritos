@@ -93,7 +93,7 @@ interface PrintFontSize {
 const FONT_SIZES: PrintFontSize = {
   normal: 1,
   large: 1.5,
-  title: 2
+  title: 2,
 }
 
 export default function FacturasVendedor() {
@@ -109,36 +109,39 @@ export default function FacturasVendedor() {
   const [terminoBusqueda, setTerminoBusqueda] = useState("")
   const [cargandoFactura, setCargandoFactura] = useState<number | null>(null)
   const [imprimiendo, setImprimiendo] = useState<number | null>(null)
-  const [tamañoFuente, setTamañoFuente] = useState<keyof PrintFontSize>('large')
+  const [tamañoFuente, setTamañoFuente] = useState<keyof PrintFontSize>("large")
   const router = useRouter()
 
   // Función para obtener la fecha actual en la zona horaria de Honduras (America/Tegucigalpa)
   const getCurrentDateInTimezone = useCallback((timeZone: string): string => {
     const now = new Date()
-    const formatter = new Intl.DateTimeFormat('en-CA', { timeZone })
+    const formatter = new Intl.DateTimeFormat("en-CA", { timeZone })
     const parts = formatter.formatToParts(now)
-    const year = parts.find((p) => p.type === 'year')?.value || ''
-    const month = parts.find((p) => p.type === 'month')?.value.padStart(2, '0') || ''
-    const day = parts.find((p) => p.type === 'day')?.value.padStart(2, '0') || ''
+    const year = parts.find((p) => p.type === "year")?.value || ""
+    const month = parts.find((p) => p.type === "month")?.value.padStart(2, "0") || ""
+    const day = parts.find((p) => p.type === "day")?.value.padStart(2, "0") || ""
     return `${year}-${month}-${day}`
   }, [])
 
   // Fecha actual en formato YYYY-MM-DD en zona horaria de Honduras
-  const currentDate = getCurrentDateInTimezone('America/Tegucigalpa')
+  const currentDate = getCurrentDateInTimezone("America/Tegucigalpa")
 
   // Función para formatear fechas de manera consistente en zona horaria de Honduras
   const formatDateForDisplay = useCallback((dateString: string): string => {
-    const date = new Date(dateString + 'T00:00:00') // Asumir inicio del día
+    const date = new Date(dateString + "T00:00:00") // Asumir inicio del día
     return date.toLocaleDateString("es-HN", {
-      timeZone: 'America/Tegucigalpa',
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric'
+      timeZone: "America/Tegucigalpa",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
     })
   }, [])
 
   // Memorizar cálculos de totales para optimizar rendimiento
-  const totalFacturado = useMemo(() => facturasFiltradas.reduce((sum, f) => sum + f.monto_total, 0), [facturasFiltradas])
+  const totalFacturado = useMemo(
+    () => facturasFiltradas.reduce((sum, f) => sum + f.monto_total, 0),
+    [facturasFiltradas],
+  )
   const facturasActivas = useMemo(() => facturasFiltradas.filter((f) => !f.anulada).length, [facturasFiltradas])
 
   const cargarFacturas = useCallback(
@@ -220,11 +223,11 @@ export default function FacturasVendedor() {
     }
   }, [terminoBusqueda, facturas])
 
-  const formatearParaPOSA7 = (factura: Factura | FacturaDetalle, fontSize: keyof PrintFontSize = 'large'): string => {
+  const formatearParaPOSA7 = (factura: Factura | FacturaDetalle, fontSize: keyof PrintFontSize = "large"): string => {
     const sizeMultiplier = FONT_SIZES[fontSize]
     const baseLineLength = A7_CONFIG.charactersPerLine
     const lineLength = Math.floor(baseLineLength / sizeMultiplier)
-    
+
     const repeatChar = (char: string, length: number): string => {
       return char.repeat(Math.floor(length * sizeMultiplier))
     }
@@ -237,13 +240,13 @@ export default function FacturasVendedor() {
 
     // Función para dividir texto en múltiples líneas si es muy largo
     const splitLongText = (text: string, maxLength: number): string[] => {
-      const words = text.split(' ')
+      const words = text.split(" ")
       const lines: string[] = []
-      let currentLine = ''
+      let currentLine = ""
 
       for (const word of words) {
         if (currentLine.length + word.length + 1 <= maxLength) {
-          currentLine += (currentLine ? ' ' : '') + word
+          currentLine += (currentLine ? " " : "") + word
         } else {
           if (currentLine) lines.push(currentLine)
           currentLine = word
@@ -275,8 +278,8 @@ Cliente:`
     // Mostrar el nombre completo del cliente, dividido en múltiples líneas si es necesario
     const customerName = factura.nombre_cliente || "N/A"
     const customerLines = splitLongText(customerName, lineLength)
-    
-    customerLines.forEach(line => {
+
+    customerLines.forEach((line) => {
       contenido += `\n${line}`
     })
 
@@ -337,15 +340,15 @@ ${line}
 
   const detectarAPIsImpresion = (): string[] => {
     const apis: string[] = []
-    if (typeof window.POS?.printer?.printText === 'function') apis.push('posPrinter')
-    if (typeof window.printerAPI?.printText === 'function') apis.push('printerAPI')
-    if (typeof window.StarWebPrint?.print === 'function') apis.push('starWebPrint')
-    if (typeof window.Epson?.append === 'function') apis.push('epson')
-    if (typeof window.Print?.printText === 'function') apis.push('printText')
-    if (typeof window.bluetoothPrint === 'function') apis.push('bluetooth')
-    if (typeof window.printToTerminal === 'function') apis.push('terminal')
-    if (typeof posprinter.initUSB === 'function') apis.push('usb')
-    if (typeof posprinter.initSerial === 'function') apis.push('serial')
+    if (typeof window.POS?.printer?.printText === "function") apis.push("posPrinter")
+    if (typeof window.printerAPI?.printText === "function") apis.push("printerAPI")
+    if (typeof window.StarWebPrint?.print === "function") apis.push("starWebPrint")
+    if (typeof window.Epson?.append === "function") apis.push("epson")
+    if (typeof window.Print?.printText === "function") apis.push("printText")
+    if (typeof window.bluetoothPrint === "function") apis.push("bluetooth")
+    if (typeof window.printToTerminal === "function") apis.push("terminal")
+    if (typeof posprinter.initUSB === "function") apis.push("usb")
+    if (typeof posprinter.initSerial === "function") apis.push("serial")
     return apis
   }
 
@@ -358,7 +361,7 @@ ${line}
         alignment: "left",
         bold: false,
         cutPaper: true,
-        feedLines: 3
+        feedLines: 3,
       }
       return await posprinter.printReceipt(contenido, printOptions)
     } catch {
@@ -375,7 +378,7 @@ ${line}
         alignment: "left",
         bold: false,
         cutPaper: true,
-        feedLines: 3
+        feedLines: 3,
       }
       return await posprinter.printReceipt(contenido, printOptions)
     } catch {
@@ -553,7 +556,7 @@ ${line}
     try {
       const contenidoPOS = formatearParaPOSA7(factura, tamaño)
       const apisDisponibles = detectarAPIsImpresion()
-      
+
       if (apisDisponibles.length === 0) {
         await mostrarVistaPreviaA7(factura, contenidoPOS)
         return
@@ -563,22 +566,22 @@ ${line}
       for (const api of apisDisponibles) {
         try {
           switch (api) {
-            case 'usb':
+            case "usb":
               impresionExitosa = await intentarImpresionUSB(contenidoPOS)
               break
-            case 'serial':
+            case "serial":
               impresionExitosa = await intentarImpresionSerial(contenidoPOS)
               break
-            case 'posPrinter':
+            case "posPrinter":
               impresionExitosa = await intentarImpresionPOS(contenidoPOS, factura)
               break
-            case 'starWebPrint':
+            case "starWebPrint":
               impresionExitosa = await intentarImpresionStar(contenidoPOS)
               break
-            case 'epson':
+            case "epson":
               impresionExitosa = await intentarImpresionEpson(contenidoPOS)
               break
-            case 'printerAPI':
+            case "printerAPI":
               impresionExitosa = await intentarImpresionAPI(contenidoPOS)
               break
           }
@@ -605,7 +608,7 @@ ${line}
   }
 
   const imprimirFactura = async (factura: Factura | FacturaDetalle) => {
-    await imprimirConTamañoPersonalizado(factura, 'large')
+    await imprimirConTamañoPersonalizado(factura, "large")
   }
 
   const descargarFactura = (factura: Factura | FacturaDetalle) => {
@@ -668,7 +671,7 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}`.trim()
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="flex flex-col items-center">
           <Loader2 className="h-8 w-8 animate-spin text-blue-500 mb-4" />
-          <p>Cargando facturas...</p>
+          <p className="text-gray-700">Cargando facturas...</p>
         </div>
       </div>
     )
@@ -899,7 +902,7 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}`.trim()
 
             <div className="flex items-center gap-2 mb-4">
               <label className="text-sm">Tamaño de letra para impresión:</label>
-              <select 
+              <select
                 value={tamañoFuente}
                 onChange={(e) => setTamañoFuente(e.target.value as keyof PrintFontSize)}
                 className="border rounded p-1 text-sm"
