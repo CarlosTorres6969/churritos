@@ -21,6 +21,7 @@ interface Producto {
   precio_completo: number
   precio_medio: number
   precio_mayorista: number
+  precio_mayorista2: number
   stock: number
   id_ruta?: number | null
 }
@@ -49,7 +50,7 @@ interface DetalleVenta {
   id_producto: number
   producto: Producto
   cantidad: number
-  tipo_precio: "completo" | "medio" | "mayorista"
+  tipo_precio: "completo" | "medio" | "mayorista" | "mayorista2"
   subtotal: number
 }
 
@@ -261,6 +262,7 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
               precio_completo: productoCompleto?.precio_completo || item.precio_completo || 0,
               precio_medio: productoCompleto?.precio_medio || item.precio_medio || 0,
               precio_mayorista: productoCompleto?.precio_mayorista || item.precio_mayorista || 0,
+              precio_mayorista2: productoCompleto?.precio_mayorista2 || item.precio_mayorista2 || 0,
               stock: item.cantidad,
               id_ruta: item.id_ruta,
             }
@@ -386,10 +388,12 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
     }
   }
 
-  const obtenerPrecio = (producto: Producto, tipoPrecio: "completo" | "medio" | "mayorista"): number => {
+  const obtenerPrecio = (producto: Producto, tipoPrecio: "completo" | "medio" | "mayorista" | "mayorista2"): number => {
     switch (tipoPrecio) {
       case "mayorista":
         return producto.precio_mayorista
+      case "mayorista2":
+        return producto.precio_mayorista2
       case "medio":
         return producto.precio_medio
       default:
@@ -409,7 +413,7 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
       return
     }
 
-    let precioTipo: "completo" | "medio" | "mayorista" = clienteSeleccionado.tipo_cliente.includes("mayorista")
+    let precioTipo: "completo" | "medio" | "mayorista" | "mayorista2" = clienteSeleccionado.tipo_cliente.includes("mayorista")
       ? "mayorista"
       : "completo"
 
@@ -488,7 +492,7 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
     )
   }
 
-  const cambiarTipoPrecio = (detalle: DetalleVenta, nuevoTipo: "completo" | "medio" | "mayorista") => {
+  const cambiarTipoPrecio = (detalle: DetalleVenta, nuevoTipo: "completo" | "medio" | "mayorista" | "mayorista2") => {
     if (!availablePrices.includes(nuevoTipo)) {
       setError(`El tipo de precio ${nuevoTipo} no está disponible para este cliente`)
       return
@@ -840,7 +844,7 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
                             <Label>Tipo de Precio</Label>
                             <Select
                               value={detalle.tipo_precio}
-                              onValueChange={(value: "completo" | "medio" | "mayorista") =>
+                              onValueChange={(value: "completo" | "medio" | "mayorista" | "mayorista2") =>
                                 cambiarTipoPrecio(detalle, value)
                               }
                               disabled={esStockMedioProducto}
@@ -852,7 +856,7 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
                               <SelectContent>
                                 {availablePrices.map((price) => (
                                   <SelectItem key={price} value={price} disabled={esStockMedioProducto && price !== "medio"}>
-                                    {price.charAt(0).toUpperCase() + price.slice(1)}
+                                    {price === "mayorista2" ? "Mayorista 2" : price.charAt(0).toUpperCase() + price.slice(1)}
                                     {esStockMedioProducto && price !== "medio" && " (No disponible)"}
                                   </SelectItem>
                                 ))}

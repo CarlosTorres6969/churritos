@@ -11,7 +11,7 @@ function getErrorMessage(error: unknown): string {
 interface DetalleVenta {
   id_producto: number
   cantidad: number
-  tipo_precio: "completo" | "medio" | "mayorista"
+  tipo_precio: "completo" | "medio" | "mayorista" | "mayorista2"
 }
 
 interface Venta {
@@ -54,7 +54,7 @@ export async function GET(req: NextRequest) {
         .request()
         .input("id_venta", sql.Int, id_venta)
         .query(
-          `SELECT dv.id_detalle, dv.id_producto, pr.nombre AS nombre_producto, dv.cantidad, dv.subtotal, CASE WHEN dv.subtotal / dv.cantidad = pr.precio_completo THEN 'completo' WHEN dv.subtotal / dv.cantidad = pr.precio_medio THEN 'medio' WHEN dv.subtotal / dv.cantidad = pr.precio_mayorista THEN 'mayorista' END AS tipo_precio FROM Detalle_Venta dv JOIN Producto pr ON dv.id_producto = pr.id_producto WHERE dv.id_venta = @id_venta`,
+          `SELECT dv.id_detalle, dv.id_producto, pr.nombre AS nombre_producto, dv.cantidad, dv.subtotal, CASE WHEN dv.subtotal / dv.cantidad = pr.precio_completo THEN 'completo' WHEN dv.subtotal / dv.cantidad = pr.precio_medio THEN 'medio' WHEN dv.subtotal / dv.cantidad = pr.precio_mayorista THEN 'mayorista' WHEN dv.subtotal / dv.cantidad = pr.precio_mayorista2 THEN 'mayorista2' END AS tipo_precio FROM Detalle_Venta dv JOIN Producto pr ON dv.id_producto = pr.id_producto WHERE dv.id_venta = @id_venta`,
         )
 
       return NextResponse.json({
@@ -79,7 +79,7 @@ export async function GET(req: NextRequest) {
       let availablePrices: string[] = []
 
       if (tipo_cliente.includes("mayorista")) {
-        availablePrices = ["mayorista"]
+        availablePrices = ["mayorista", "mayorista2"]
       } else {
         availablePrices = ["completo", "medio"]
       }
@@ -128,11 +128,11 @@ export async function GET(req: NextRequest) {
           pagination: sin_limite
             ? null
             : {
-                page,
-                pageSize,
-                total: totalCount,
-                totalPages: Math.ceil(totalCount / pageSize),
-              },
+              page,
+              pageSize,
+              total: totalCount,
+              totalPages: Math.ceil(totalCount / pageSize),
+            },
         },
       })
     }
@@ -181,14 +181,14 @@ export async function POST(req: NextRequest) {
     // Validación de tipos de precio según tipo de cliente
     for (const detalle of detalles_venta) {
       if (tipo_cliente.includes("mayorista")) {
-        if (detalle.tipo_precio !== "mayorista") {
+        if (detalle.tipo_precio !== "mayorista" && detalle.tipo_precio !== "mayorista2") {
           return NextResponse.json(
-            { success: false, error: "Los clientes mayoristas solo pueden comprar con precio mayorista" },
+            { success: false, error: "Los clientes mayoristas solo pueden comprar con precio mayorista o mayorista2" },
             { status: 400 },
           )
         }
       } else {
-        if (detalle.tipo_precio === "mayorista") {
+        if (detalle.tipo_precio === "mayorista" || detalle.tipo_precio === "mayorista2") {
           return NextResponse.json(
             { success: false, error: "Solo los clientes mayoristas pueden usar precios mayoristas" },
             { status: 400 },
@@ -221,7 +221,7 @@ export async function POST(req: NextRequest) {
         const { id_producto, cantidad, tipo_precio } = detalle
 
         const productRequest = new sql.Request(transaction)
-        const productQuery = `SELECT precio_completo, precio_medio, precio_mayorista FROM Producto WHERE id_producto = @producto_id AND activo = 1`
+        const productQuery = `SELECT precio_completo, precio_medio, precio_mayorista, precio_mayorista2 FROM Producto WHERE id_producto = @producto_id AND activo = 1`
 
         const productResult = await productRequest.input("producto_id", sql.Int, id_producto).query(productQuery)
 
@@ -233,7 +233,9 @@ export async function POST(req: NextRequest) {
         let precioUnitario: number
 
         if (tipo_cliente.includes("mayorista")) {
-          precioUnitario = Number.parseFloat(product.precio_mayorista)
+          precioUnitario = tipo_precio === "mayorista2"
+            ? Number.parseFloat(product.precio_mayorista2)
+            : Number.parseFloat(product.precio_mayorista)
         } else {
           precioUnitario =
             tipo_precio === "medio"
@@ -392,14 +394,14 @@ export async function PUT(req: NextRequest) {
 
     // Validación de tipos de precio según tipo de cliente
     for (const detalle of detalles_venta) {
-      if (tipo_cliente.includes("mayorista") && detalle.tipo_precio !== "mayorista") {
+      if (tipo_cliente.includes("mayorista") && detalle.tipo_precio !== "mayorista" && detalle.tipo_precio !== "mayorista2") {
         return NextResponse.json(
-          { success: false, error: "Los clientes mayoristas solo pueden comprar con precio mayorista" },
+          { success: false, error: "Los clientes mayoristas solo pueden comprar con precio mayorista o mayorista2" },
           { status: 400 },
         )
       }
 
-      if (!tipo_cliente.includes("mayorista") && detalle.tipo_precio === "mayorista") {
+      if (!tipo_cliente.includes("mayorista") && (detalle.tipo_precio === "mayorista" || detalle.tipo_precio === "mayorista2")) {
         return NextResponse.json(
           { success: false, error: "Solo los clientes mayoristas pueden usar precios mayoristas" },
           { status: 400 },
@@ -416,13 +418,18 @@ export async function PUT(req: NextRequest) {
       const currentDetails = await new sql.Request(transaction)
         .input("id_venta", sql.Int, id_venta)
         .query(
-          `SELECT dv.id_producto, dv.cantidad, p.precio_completo, p.precio_medio, p.precio_mayorista FROM Detalle_Venta dv JOIN Producto p ON dv.id_producto = p.id_producto WHERE dv.id_venta = @id_venta`,
+          `SELECT dv.id_producto, dv.cantidad, dv.subtotal, p.precio_completo, p.precio_medio, p.precio_mayorista, p.precio_mayorista2 FROM Detalle_Venta dv JOIN Producto p ON dv.id_producto = p.id_producto WHERE dv.id_venta = @id_venta`,
         )
 
       // 2. Revertir inventario y crédito si aplica
       for (const detalle of currentDetails.recordset) {
-        const cantidadARevertir =
-          detalle.subtotal / detalle.precio_completo === detalle.cantidad ? detalle.cantidad : detalle.cantidad * 0.5
+        // Determinar el tipo de precio usado para calcular la cantidad correcta
+        let cantidadARevertir = detalle.cantidad
+        const precioUnitario = detalle.subtotal / detalle.cantidad
+
+        if (Math.abs(precioUnitario - detalle.precio_medio) < 0.01) {
+          cantidadARevertir = detalle.cantidad * 0.5
+        }
 
         await new sql.Request(transaction)
           .input("ruta_id", sql.Int, id_ruta)
@@ -470,7 +477,7 @@ export async function PUT(req: NextRequest) {
         const productResult = await new sql.Request(transaction)
           .input("producto_id", sql.Int, id_producto)
           .query(
-            `SELECT precio_completo, precio_medio, precio_mayorista FROM Producto WHERE id_producto = @producto_id AND activo = 1`,
+            `SELECT precio_completo, precio_medio, precio_mayorista, precio_mayorista2 FROM Producto WHERE id_producto = @producto_id AND activo = 1`,
           )
 
         if (productResult.recordset.length === 0) {
@@ -481,7 +488,9 @@ export async function PUT(req: NextRequest) {
         let precioUnitario: number
 
         if (tipo_cliente.includes("mayorista")) {
-          precioUnitario = Number.parseFloat(product.precio_mayorista)
+          precioUnitario = tipo_precio === "mayorista2"
+            ? Number.parseFloat(product.precio_mayorista2)
+            : Number.parseFloat(product.precio_mayorista)
         } else {
           precioUnitario =
             tipo_precio === "medio"

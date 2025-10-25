@@ -19,6 +19,7 @@ interface Producto {
   precio_completo: number
   precio_medio: number
   precio_mayorista: number
+  precio_mayorista2: number
   activo?: boolean
 }
 
@@ -37,6 +38,7 @@ export default function GestionProductos() {
     precio_completo: 0,
     precio_medio: 0,
     precio_mayorista: 0,
+    precio_mayorista2: 0,
     activo: true,
   })
   const router = useRouter()
@@ -93,6 +95,7 @@ export default function GestionProductos() {
         precio_completo: 0,
         precio_medio: 0,
         precio_mayorista: 0,
+        precio_mayorista2: 0,
         activo: true,
       })
     }
@@ -240,6 +243,10 @@ export default function GestionProductos() {
                     <span>Precio Mayorista:</span>
                     <span className="font-medium">L. {producto.precio_mayorista.toFixed(2)}</span>
                   </div>
+                  <div className="flex justify-between">
+                    <span>Precio Mayorista 2:</span>
+                    <span className="font-medium">L. {producto.precio_mayorista2.toFixed(2)}</span>
+                  </div>
                 </div>
 
                 <div className="flex gap-2 pt-4">
@@ -367,6 +374,23 @@ export default function GestionProductos() {
                   value={formData.precio_mayorista}
                   onChange={(e) =>
                     setFormData({ ...formData, precio_mayorista: Number.parseFloat(e.target.value) || 0 })
+                  }
+                  className="col-span-3"
+                  placeholder="0.00"
+                />
+              </div>
+
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="precio_mayorista2" className="text-right">
+                  Precio Mayorista 2
+                </Label>
+                <Input
+                  id="precio_mayorista2"
+                  type="number"
+                  step="0.01"
+                  value={formData.precio_mayorista2}
+                  onChange={(e) =>
+                    setFormData({ ...formData, precio_mayorista2: Number.parseFloat(e.target.value) || 0 })
                   }
                   className="col-span-3"
                   placeholder="0.00"

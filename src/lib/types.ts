@@ -58,6 +58,7 @@ export interface Producto {
   precio_completo: number
   precio_medio: number
   precio_mayorista: number
+  precio_mayorista2: number
   activo?: boolean
 }
 
@@ -145,5 +146,5 @@ export interface Venta {
 export interface DetalleVenta {
   id_producto: number;
   cantidad: number;
-  tipo_precio: "completo" | "medio";
+  tipo_precio: "completo" | "medio" | "mayorista" | "mayorista2";
 }

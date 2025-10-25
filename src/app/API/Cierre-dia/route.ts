@@ -57,9 +57,11 @@ export async function GET(req: NextRequest) {
                 p.precio_completo,
                 p.precio_medio,
                 p.precio_mayorista,
+                p.precio_mayorista2,
                 dv.cantidad,
                 dv.subtotal,
                 CASE 
+                    WHEN ABS(dv.subtotal/dv.cantidad - p.precio_mayorista2) < 0.01 THEN 'mayorista2'
                     WHEN ABS(dv.subtotal/dv.cantidad - p.precio_mayorista) < 0.01 THEN 'mayorista'
                     WHEN ABS(dv.subtotal/dv.cantidad - p.precio_medio) < 0.01 THEN 'medio'
                     WHEN ABS(dv.subtotal/dv.cantidad - p.precio_completo) < 0.01 THEN 'completo'
@@ -84,13 +86,13 @@ export async function GET(req: NextRequest) {
                 CASE 
                     WHEN descripcion LIKE '%L4%' THEN
                         CASE 
-                            WHEN tipo_precio = 'mayorista' THEN 'mayorista'
+                            WHEN tipo_precio IN ('mayorista', 'mayorista2') THEN 'mayorista'
                             WHEN tipo_precio IN ('medio', 'completo') THEN 'bolsas'
                             ELSE 'otros'
                         END
                     WHEN descripcion LIKE '%L3%' THEN
                         CASE 
-                            WHEN tipo_precio = 'mayorista' THEN 'mayorista'
+                            WHEN tipo_precio IN ('mayorista', 'mayorista2') THEN 'mayorista'
                             WHEN tipo_precio IN ('medio', 'completo') THEN 'bolsas'
                             ELSE 'otros'
                         END
@@ -103,26 +105,26 @@ export async function GET(req: NextRequest) {
                     WHEN descripcion LIKE '%L4%' THEN
                         CASE 
                             WHEN tipo_precio = 'medio' THEN cantidad / 2.0
-                            WHEN tipo_precio IN ('completo', 'mayorista') THEN cantidad
+                            WHEN tipo_precio IN ('completo', 'mayorista', 'mayorista2') THEN cantidad
                             ELSE 0
                         END
                     WHEN descripcion LIKE '%L3%' THEN
                         CASE 
                             WHEN tipo_precio = 'medio' THEN cantidad / 2.0
-                            WHEN tipo_precio IN ('completo', 'mayorista') THEN cantidad
+                            WHEN tipo_precio IN ('completo', 'mayorista', 'mayorista2') THEN cantidad
                             ELSE 0
                         END
                     WHEN descripcion LIKE '%G%' THEN 
                         CASE 
-                            WHEN tipo_precio = 'mayorista' AND precio_mayorista = 38.50 THEN cantidad * 2
-                            WHEN tipo_precio = 'mayorista' AND precio_mayorista = 18.80 THEN cantidad
+                            WHEN tipo_precio IN ('mayorista', 'mayorista2') AND precio_mayorista = 38.50 THEN cantidad * 2
+                            WHEN tipo_precio IN ('mayorista', 'mayorista2') AND precio_mayorista = 18.80 THEN cantidad
                             WHEN precio_completo = 20 THEN cantidad / 2.0
                             WHEN precio_completo = 40 THEN cantidad
                             ELSE cantidad
                         END
                     WHEN descripcion LIKE '%C%' THEN 
                         CASE 
-                            WHEN tipo_precio = 'mayorista' AND precio_mayorista = 38.50 THEN cantidad * 2
+                            WHEN tipo_precio IN ('mayorista', 'mayorista2') AND precio_mayorista = 38.50 THEN cantidad * 2
                             WHEN precio_completo = 20 THEN cantidad / 2.0
                             WHEN precio_completo = 40 THEN cantidad
                             ELSE cantidad
