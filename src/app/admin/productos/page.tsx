@@ -19,7 +19,7 @@ interface Producto {
   precio_completo: number
   precio_medio: number
   precio_mayorista: number
-  precio_mayorista2: number
+  precio_mayorista2?: number
   activo?: boolean
 }
 
@@ -85,7 +85,10 @@ export default function GestionProductos() {
   const abrirModal = (producto?: Producto) => {
     if (producto) {
       setProductoEditando(producto)
-      setFormData(producto)
+      setFormData({
+        ...producto,
+        precio_mayorista2: producto.precio_mayorista2 || 0
+      })
     } else {
       setProductoEditando(null)
       setFormData({
@@ -245,7 +248,7 @@ export default function GestionProductos() {
                   </div>
                   <div className="flex justify-between">
                     <span>Precio Mayorista 2:</span>
-                    <span className="font-medium">L. {producto.precio_mayorista2.toFixed(2)}</span>
+                    <span className="font-medium">L. {(producto.precio_mayorista2 || 0).toFixed(2)}</span>
                   </div>
                 </div>
 
