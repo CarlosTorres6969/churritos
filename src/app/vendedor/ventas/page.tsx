@@ -74,6 +74,7 @@ interface InventarioRuta {
   precio_completo?: number
   precio_medio?: number
   precio_mayorista?: number
+  precio_mayorista2?: number
 }
 
 interface UsuarioAutenticado {
