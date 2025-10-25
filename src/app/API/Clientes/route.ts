@@ -114,9 +114,12 @@ export async function GET(req: NextRequest) {
           THEN FORMAT(c.ultima_visita, 'dd/MM/yyyy') 
           ELSE NULL 
         END as ultima_visita,
-        r.nombre as nombre_ruta
+        r.nombre as nombre_ruta,
+        cc.limite_credito,
+        cc.saldo_actual
       FROM Clientes c
       LEFT JOIN Ruta r ON c.id_ruta = r.id_ruta
+      LEFT JOIN Cliente_Credito cc ON c.id_cliente = cc.id_cliente
       WHERE c.activo = 1 
     `;
     
@@ -165,7 +168,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   let pool
   try {
-    const clientesData: Clientes = await req.json()
+    const clientesData: Clientes & { limite_credito?: number } = await req.json()
 
     const validation = validateClientesData(clientesData)
     if (!validation.isValid) {
@@ -173,60 +176,82 @@ export async function POST(req: NextRequest) {
     }
 
     pool = await getConnection()
+    const transaction = new sql.Transaction(pool)
+    await transaction.begin()
 
-    // Convertir la fecha a formato SQL sin usar Date
-    const sqlDateString = clientesData.ultima_visita ? parseDateToSQLFormat(clientesData.ultima_visita) : null
+    try {
+      // Convertir la fecha a formato SQL sin usar Date
+      const sqlDateString = clientesData.ultima_visita ? parseDateToSQLFormat(clientesData.ultima_visita) : null
 
-    // Usamos una consulta parametrizada con la fecha en formato string
-    const query = `
-      INSERT INTO Clientes (
-        nombre, apellido, telefono, direccion, email,
-        fecha_registro, id_ruta, dia_visita, activo, tipo_cliente, ultima_visita
-      )
-      OUTPUT 
-        INSERTED.id_cliente, 
-        FORMAT(INSERTED.fecha_registro, 'dd/MM/yyyy') as fecha_registro,
-        FORMAT(INSERTED.ultima_visita, 'dd/MM/yyyy') as ultima_visita
-      VALUES (
-        @nombre, @apellido, @telefono, @direccion, @email,
-        GETDATE(), @id_ruta, @dia_visita, 1, @tipo_cliente, 
-        ${sqlDateString ? "CAST(@ultima_visita AS DATE)" : "NULL"}
-      )
-    `
+      // Usamos una consulta parametrizada con la fecha en formato string
+      const query = `
+        INSERT INTO Clientes (
+          nombre, apellido, telefono, direccion, email,
+          fecha_registro, id_ruta, dia_visita, activo, tipo_cliente, ultima_visita
+        )
+        OUTPUT 
+          INSERTED.id_cliente, 
+          FORMAT(INSERTED.fecha_registro, 'dd/MM/yyyy') as fecha_registro,
+          FORMAT(INSERTED.ultima_visita, 'dd/MM/yyyy') as ultima_visita
+        VALUES (
+          @nombre, @apellido, @telefono, @direccion, @email,
+          GETDATE(), @id_ruta, @dia_visita, 1, @tipo_cliente, 
+          ${sqlDateString ? "CAST(@ultima_visita AS DATE)" : "NULL"}
+        )
+      `
 
-    const request = pool
-      .request()
-      .input("nombre", sql.NVarChar(100), clientesData.nombre.trim())
-      .input("apellido", sql.NVarChar(100), clientesData.apellido.trim())
-      .input("telefono", sql.NVarChar(20), clientesData.telefono?.trim() || null)
-      .input("direccion", sql.NVarChar(200), clientesData.direccion.trim())
-      .input("email", sql.NVarChar(100), clientesData.email?.trim() || null)
-      .input("id_ruta", sql.Int, clientesData.id_ruta || null)
-      .input("dia_visita", sql.Int, clientesData.dia_visita || null)
-      .input("tipo_cliente", sql.NVarChar(20), clientesData.tipo_cliente || "normal")
+      const request = new sql.Request(transaction)
+        .input("nombre", sql.NVarChar(100), clientesData.nombre.trim())
+        .input("apellido", sql.NVarChar(100), clientesData.apellido.trim())
+        .input("telefono", sql.NVarChar(20), clientesData.telefono?.trim() || null)
+        .input("direccion", sql.NVarChar(200), clientesData.direccion.trim())
+        .input("email", sql.NVarChar(100), clientesData.email?.trim() || null)
+        .input("id_ruta", sql.Int, clientesData.id_ruta || null)
+        .input("dia_visita", sql.Int, clientesData.dia_visita || null)
+        .input("tipo_cliente", sql.NVarChar(20), clientesData.tipo_cliente || "normal")
 
-    if (sqlDateString) {
-      request.input("ultima_visita", sql.VarChar(10), sqlDateString)
-    }
+      if (sqlDateString) {
+        request.input("ultima_visita", sql.VarChar(10), sqlDateString)
+      }
 
-    const result = await request.query(query)
+      const result = await request.query(query)
+      const id_cliente = result.recordset[0].id_cliente
 
-    // Usar la fecha formateada directamente desde SQL Server
-    const formattedDate = result.recordset[0].ultima_visita || clientesData.ultima_visita || null
+      // Si el cliente tiene crédito, crear el registro en Cliente_Credito
+      if (clientesData.tipo_cliente?.includes("credito")) {
+        const limiteCredito = clientesData.limite_credito || 0
+        
+        await new sql.Request(transaction)
+          .input("id_cliente", sql.Int, id_cliente)
+          .input("limite_credito", sql.Decimal(18, 2), limiteCredito)
+          .query(`
+            INSERT INTO Cliente_Credito (id_cliente, limite_credito, saldo_actual, fecha_actualizacion)
+            VALUES (@id_cliente, @limite_credito, 0, GETDATE())
+          `)
+      }
 
-    return NextResponse.json(
-      {
-        success: true,
-        data: {
-          id_cliente: result.recordset[0].id_cliente,
-          ...clientesData,
-          ultima_visita: formattedDate,
-          fecha_registro: result.recordset[0].fecha_registro,
+      await transaction.commit()
+
+      // Usar la fecha formateada directamente desde SQL Server
+      const formattedDate = result.recordset[0].ultima_visita || clientesData.ultima_visita || null
+
+      return NextResponse.json(
+        {
+          success: true,
+          data: {
+            id_cliente,
+            ...clientesData,
+            ultima_visita: formattedDate,
+            fecha_registro: result.recordset[0].fecha_registro,
+          },
+          message: "Cliente creado exitosamente" + (clientesData.tipo_cliente?.includes("credito") ? " con límite de crédito" : ""),
         },
-        message: "Cliente creado exitosamente",
-      },
-      { status: 201 },
-    )
+        { status: 201 },
+      )
+    } catch (error) {
+      await transaction.rollback()
+      throw error
+    }
   } catch (error) {
     console.error("Error al crear cliente:", error)
 
@@ -271,7 +296,7 @@ export async function POST(req: NextRequest) {
 export async function PUT(req: NextRequest) {
   let pool
   try {
-    const clientesData: Clientes = await req.json()
+    const clientesData: Clientes & { limite_credito?: number } = await req.json()
 
     if (!clientesData.id_cliente) {
       return NextResponse.json(
@@ -290,76 +315,121 @@ export async function PUT(req: NextRequest) {
     }
 
     pool = await getConnection()
+    const transaction = new sql.Transaction(pool)
+    await transaction.begin()
 
-    // Verificar si el cliente existe
-    const clienteExistente = await pool
-      .request()
-      .input("id_cliente", sql.Int, clientesData.id_cliente)
-      .query("SELECT COUNT(*) AS count FROM Clientes WHERE id_cliente = @id_cliente")
+    try {
+      // Verificar si el cliente existe
+      const clienteExistente = await new sql.Request(transaction)
+        .input("id_cliente", sql.Int, clientesData.id_cliente)
+        .query("SELECT COUNT(*) AS count FROM Clientes WHERE id_cliente = @id_cliente")
 
-    if (clienteExistente.recordset[0].count === 0) {
+      if (clienteExistente.recordset[0].count === 0) {
+        await transaction.rollback()
+        return NextResponse.json(
+          {
+            success: false,
+            error: "Cliente no encontrado",
+            details: `No existe un cliente con ID ${clientesData.id_cliente}`,
+          },
+          { status: 404 },
+        )
+      }
+
+      // Convertir la fecha a formato SQL sin usar Date
+      const sqlDateString = clientesData.ultima_visita ? parseDateToSQLFormat(clientesData.ultima_visita) : null
+
+      // Usamos una consulta parametrizada con la fecha en formato string
+      const query = `
+        UPDATE Clientes SET
+          nombre = @nombre,
+          apellido = @apellido,
+          telefono = @telefono,
+          direccion = @direccion,
+          email = @email,
+          id_ruta = @id_ruta,
+          dia_visita = @dia_visita,
+          tipo_cliente = @tipo_cliente,
+          ultima_visita = ${sqlDateString ? "CAST(@ultima_visita AS DATE)" : "NULL"}
+        OUTPUT 
+          FORMAT(INSERTED.ultima_visita, 'dd/MM/yyyy') as ultima_visita
+        WHERE id_cliente = @id_cliente
+      `
+
+      const request = new sql.Request(transaction)
+        .input("id_cliente", sql.Int, clientesData.id_cliente)
+        .input("nombre", sql.NVarChar(100), clientesData.nombre.trim())
+        .input("apellido", sql.NVarChar(100), clientesData.apellido.trim())
+        .input("telefono", sql.NVarChar(20), clientesData.telefono?.trim() || null)
+        .input("direccion", sql.NVarChar(200), clientesData.direccion.trim())
+        .input("email", sql.NVarChar(100), clientesData.email?.trim() || null)
+        .input("id_ruta", sql.Int, clientesData.id_ruta || null)
+        .input("dia_visita", sql.Int, clientesData.dia_visita || null)
+        .input("tipo_cliente", sql.NVarChar(20), clientesData.tipo_cliente || "normal")
+
+      if (sqlDateString) {
+        request.input("ultima_visita", sql.VarChar(10), sqlDateString)
+      }
+
+      const result = await request.query(query)
+
+      // Manejar el límite de crédito
+      if (clientesData.tipo_cliente?.includes("credito")) {
+        const limiteCredito = clientesData.limite_credito || 0
+        
+        // Verificar si ya existe un registro de crédito
+        const creditoExistente = await new sql.Request(transaction)
+          .input("id_cliente", sql.Int, clientesData.id_cliente)
+          .query("SELECT COUNT(*) AS count FROM Cliente_Credito WHERE id_cliente = @id_cliente")
+
+        if (creditoExistente.recordset[0].count > 0) {
+          // Actualizar el límite de crédito existente
+          await new sql.Request(transaction)
+            .input("id_cliente", sql.Int, clientesData.id_cliente)
+            .input("limite_credito", sql.Decimal(18, 2), limiteCredito)
+            .query(`
+              UPDATE Cliente_Credito 
+              SET limite_credito = @limite_credito, fecha_actualizacion = GETDATE()
+              WHERE id_cliente = @id_cliente
+            `)
+        } else {
+          // Crear nuevo registro de crédito
+          await new sql.Request(transaction)
+            .input("id_cliente", sql.Int, clientesData.id_cliente)
+            .input("limite_credito", sql.Decimal(18, 2), limiteCredito)
+            .query(`
+              INSERT INTO Cliente_Credito (id_cliente, limite_credito, saldo_actual, fecha_actualizacion)
+              VALUES (@id_cliente, @limite_credito, 0, GETDATE())
+            `)
+        }
+      } else {
+        // Si el cliente ya no tiene crédito, eliminar el registro (opcional)
+        // Comentado para mantener el historial
+        // await new sql.Request(transaction)
+        //   .input("id_cliente", sql.Int, clientesData.id_cliente)
+        //   .query("DELETE FROM Cliente_Credito WHERE id_cliente = @id_cliente")
+      }
+
+      await transaction.commit()
+
+      // Usar la fecha formateada directamente desde SQL Server
+      const formattedDate = result.recordset[0].ultima_visita || clientesData.ultima_visita || null
+
       return NextResponse.json(
         {
-          success: false,
-          error: "Cliente no encontrado",
-          details: `No existe un cliente con ID ${clientesData.id_cliente}`,
+          success: true,
+          data: {
+            ...clientesData,
+            ultima_visita: formattedDate,
+          },
+          message: "Cliente actualizado exitosamente",
         },
-        { status: 404 },
+        { status: 200 },
       )
+    } catch (error) {
+      await transaction.rollback()
+      throw error
     }
-
-    // Convertir la fecha a formato SQL sin usar Date
-    const sqlDateString = clientesData.ultima_visita ? parseDateToSQLFormat(clientesData.ultima_visita) : null
-
-    // Usamos una consulta parametrizada con la fecha en formato string
-    const query = `
-      UPDATE Clientes SET
-        nombre = @nombre,
-        apellido = @apellido,
-        telefono = @telefono,
-        direccion = @direccion,
-        email = @email,
-        id_ruta = @id_ruta,
-        dia_visita = @dia_visita,
-        tipo_cliente = @tipo_cliente,
-        ultima_visita = ${sqlDateString ? "CAST(@ultima_visita AS DATE)" : "NULL"}
-      OUTPUT 
-        FORMAT(INSERTED.ultima_visita, 'dd/MM/yyyy') as ultima_visita
-      WHERE id_cliente = @id_cliente
-    `
-
-    const request = pool
-      .request()
-      .input("id_cliente", sql.Int, clientesData.id_cliente)
-      .input("nombre", sql.NVarChar(100), clientesData.nombre.trim())
-      .input("apellido", sql.NVarChar(100), clientesData.apellido.trim())
-      .input("telefono", sql.NVarChar(20), clientesData.telefono?.trim() || null)
-      .input("direccion", sql.NVarChar(200), clientesData.direccion.trim())
-      .input("email", sql.NVarChar(100), clientesData.email?.trim() || null)
-      .input("id_ruta", sql.Int, clientesData.id_ruta || null)
-      .input("dia_visita", sql.Int, clientesData.dia_visita || null)
-      .input("tipo_cliente", sql.NVarChar(20), clientesData.tipo_cliente || "normal")
-
-    if (sqlDateString) {
-      request.input("ultima_visita", sql.VarChar(10), sqlDateString)
-    }
-
-    const result = await request.query(query)
-
-    // Usar la fecha formateada directamente desde SQL Server
-    const formattedDate = result.recordset[0].ultima_visita || clientesData.ultima_visita || null
-
-    return NextResponse.json(
-      {
-        success: true,
-        data: {
-          ...clientesData,
-          ultima_visita: formattedDate,
-        },
-        message: "Cliente actualizado exitosamente",
-      },
-      { status: 200 },
-    )
   } catch (error) {
     console.error("Error al actualizar cliente:", error)
 

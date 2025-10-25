@@ -25,6 +25,8 @@ interface Cliente {
   tipo_cliente?: string
   ultima_visita?: string
   activo?: boolean
+  limite_credito?: number
+  saldo_actual?: number
 }
 
 interface Ruta {
@@ -52,6 +54,7 @@ export default function GestionClientes() {
     dia_visita: undefined,
     tipo_cliente: "normal",
     activo: true,
+    limite_credito: 0,
   })
   const router = useRouter()
 
@@ -137,6 +140,7 @@ export default function GestionClientes() {
         dia_visita: undefined,
         tipo_cliente: "normal",
         activo: true,
+        limite_credito: 0,
       })
     }
     setModalAbierto(true)
@@ -379,6 +383,21 @@ export default function GestionClientes() {
                   )}
                 </div>
 
+                {cliente.tipo_cliente?.includes("credito") && (
+                  <div className="bg-orange-50 border border-orange-200 rounded-md p-3 text-sm">
+                    <p className="font-semibold text-orange-800 mb-1">Información de Crédito</p>
+                    <p className="text-orange-700">
+                      <strong>Límite:</strong> L. {(cliente.limite_credito || 0).toFixed(2)}
+                    </p>
+                    <p className="text-orange-700">
+                      <strong>Saldo actual:</strong> L. {(cliente.saldo_actual || 0).toFixed(2)}
+                    </p>
+                    <p className="text-orange-700">
+                      <strong>Disponible:</strong> L. {((cliente.limite_credito || 0) - (cliente.saldo_actual || 0)).toFixed(2)}
+                    </p>
+                  </div>
+                )}
+
                 <div className="flex gap-2 pt-4">
                   <Button variant="outline" size="sm" onClick={() => abrirModal(cliente)} className="flex-1">
                     <Edit className="h-4 w-4 mr-1" />
@@ -490,6 +509,21 @@ export default function GestionClientes() {
                   </SelectContent>
                 </Select>
               </div>
+
+              {formData.tipo_cliente?.includes("credito") && (
+                <div>
+                  <Label htmlFor="limite_credito">Límite de Crédito (L.)</Label>
+                  <Input
+                    id="limite_credito"
+                    type="number"
+                    step="0.01"
+                    value={formData.limite_credito || 0}
+                    onChange={(e) => setFormData({ ...formData, limite_credito: Number.parseFloat(e.target.value) || 0 })}
+                    placeholder="0.00"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Monto máximo de crédito permitido para este cliente</p>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
