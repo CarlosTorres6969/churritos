@@ -36,6 +36,8 @@ interface Cliente {
   dia_visita?: number | null
   id_ruta?: number | null
   activo?: boolean
+  limite_credito?: number
+  saldo_actual?: number
 }
 
 interface Ruta {
@@ -60,6 +62,8 @@ interface PriceTypeResponse {
     id_cliente: number
     tipo_cliente: string
     availablePrices: string[]
+    limite_credito?: number
+    saldo_actual?: number
   }
 }
 
@@ -378,6 +382,12 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
       const data: PriceTypeResponse = await response.json()
       if (data.success) {
         setAvailablePrices(data.data.availablePrices)
+        // Actualizar la información de crédito del cliente
+        setClienteSeleccionado({
+          ...cliente,
+          limite_credito: data.data.limite_credito,
+          saldo_actual: data.data.saldo_actual
+        })
       } else {
         setError("Error al cargar precios disponibles")
         setAvailablePrices([])
@@ -709,6 +719,16 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
                             </Badge>
                           ))}
                         </div>
+                        {clienteSeleccionado.tipo_cliente?.includes("credito") && (
+                          <div className="bg-orange-50 border border-orange-200 rounded-md p-2 mt-3">
+                            <p className="text-xs font-semibold text-orange-800 mb-1">Información de Crédito</p>
+                            <div className="text-xs text-orange-700 space-y-1">
+                              <p><strong>Límite:</strong> L. {(clienteSeleccionado.limite_credito || 0).toFixed(2)}</p>
+                              <p><strong>Saldo:</strong> L. {(clienteSeleccionado.saldo_actual || 0).toFixed(2)}</p>
+                              <p><strong>Disponible:</strong> L. {((clienteSeleccionado.limite_credito || 0) - (clienteSeleccionado.saldo_actual || 0)).toFixed(2)}</p>
+                            </div>
+                          </div>
+                        )}
                       </div>
                       <Button
                         variant="ghost"

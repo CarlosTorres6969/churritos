@@ -69,13 +69,18 @@ export async function GET(req: NextRequest) {
       const clienteRequest = await pool
         .request()
         .input("id_cliente", sql.Int, id_cliente)
-        .query(`SELECT tipo_cliente FROM clientes WHERE id_cliente = @id_cliente AND activo = 1`)
+        .query(`
+          SELECT c.tipo_cliente, cc.limite_credito, cc.saldo_actual 
+          FROM clientes c 
+          LEFT JOIN Cliente_Credito cc ON c.id_cliente = cc.id_cliente 
+          WHERE c.id_cliente = @id_cliente AND c.activo = 1
+        `)
 
       if (clienteRequest.recordset.length === 0) {
         return NextResponse.json({ success: false, error: "Cliente no encontrado o inactivo" }, { status: 404 })
       }
 
-      const { tipo_cliente } = clienteRequest.recordset[0]
+      const { tipo_cliente, limite_credito, saldo_actual } = clienteRequest.recordset[0]
       let availablePrices: string[] = []
 
       if (tipo_cliente.includes("mayorista")) {
@@ -90,6 +95,8 @@ export async function GET(req: NextRequest) {
           id_cliente,
           tipo_cliente,
           availablePrices,
+          limite_credito: limite_credito || 0,
+          saldo_actual: saldo_actual || 0,
         },
       })
     } else {
@@ -280,6 +287,31 @@ export async function POST(req: NextRequest) {
       // Manejo de pagos a crédito
       if (tipo_pago === "credito") {
         if (tipo_cliente.includes("credito")) {
+          // Verificar límite de crédito antes de procesar la venta
+          const creditoActualRequest = new sql.Request(transaction)
+          const creditoActual = await creditoActualRequest
+            .input("cliente_id", sql.Int, id_cliente)
+            .query("SELECT limite_credito, saldo_actual FROM Cliente_Credito WHERE id_cliente = @cliente_id")
+
+          if (creditoActual.recordset.length === 0) {
+            throw new Error("El cliente no tiene configurado un límite de crédito")
+          }
+
+          const { limite_credito, saldo_actual } = creditoActual.recordset[0]
+          const nuevoSaldo = Number(saldo_actual) + totalVenta
+          
+          if (nuevoSaldo > Number(limite_credito)) {
+            const creditoDisponible = Number(limite_credito) - Number(saldo_actual)
+            throw new Error(
+              `La venta excede el límite de crédito. ` +
+              `Límite: L.${Number(limite_credito).toFixed(2)}, ` +
+              `Saldo actual: L.${Number(saldo_actual).toFixed(2)}, ` +
+              `Disponible: L.${creditoDisponible.toFixed(2)}, ` +
+              `Venta: L.${totalVenta.toFixed(2)}`
+            )
+          }
+
+          // Si pasa la validación, actualizar el saldo
           const creditRequest = new sql.Request(transaction)
           await creditRequest
             .input("cliente_id", sql.Int, id_cliente)
@@ -529,6 +561,31 @@ export async function PUT(req: NextRequest) {
 
       // 8. Actualizar crédito si es necesario
       if (tipo_pago === "credito" && tipo_cliente.includes("credito")) {
+        // Verificar límite de crédito antes de actualizar la venta
+        const creditoActualRequest = new sql.Request(transaction)
+        const creditoActual = await creditoActualRequest
+          .input("cliente_id", sql.Int, id_cliente)
+          .query("SELECT limite_credito, saldo_actual FROM Cliente_Credito WHERE id_cliente = @cliente_id")
+
+        if (creditoActual.recordset.length === 0) {
+          throw new Error("El cliente no tiene configurado un límite de crédito")
+        }
+
+        const { limite_credito, saldo_actual } = creditoActual.recordset[0]
+        const nuevoSaldoTotal = Number(saldo_actual) + nuevoTotal
+        
+        if (nuevoSaldoTotal > Number(limite_credito)) {
+          const creditoDisponible = Number(limite_credito) - Number(saldo_actual)
+          throw new Error(
+            `La venta actualizada excede el límite de crédito. ` +
+            `Límite: L.${Number(limite_credito).toFixed(2)}, ` +
+            `Saldo actual: L.${Number(saldo_actual).toFixed(2)}, ` +
+            `Disponible: L.${creditoDisponible.toFixed(2)}, ` +
+            `Nueva venta: L.${nuevoTotal.toFixed(2)}`
+          )
+        }
+
+        // Si pasa la validación, actualizar el saldo
         await new sql.Request(transaction)
           .input("cliente_id", sql.Int, id_cliente)
           .input("monto", sql.Decimal(18, 2), nuevoTotal)
