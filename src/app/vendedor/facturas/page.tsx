@@ -611,6 +611,235 @@ ${line}
     await imprimirConTamañoPersonalizado(factura, "large")
   }
 
+  // Configuración para impresora MPT-II (80mm)
+  const MPT_II_CONFIG = {
+    width: 80, // mm
+    charactersPerLine: 48, // caracteres por línea para 80mm
+    printableWidth: 72, // mm
+  }
+
+  const formatearParaMPTII = (factura: Factura | FacturaDetalle): string => {
+    const lineLength = MPT_II_CONFIG.charactersPerLine
+    
+    const repeatChar = (char: string, length: number): string => {
+      return char.repeat(length)
+    }
+
+    const centerText = (text: string): string => {
+      if (text.length >= lineLength) return text.substring(0, lineLength)
+      const spaces = Math.floor((lineLength - text.length) / 2)
+      return " ".repeat(spaces) + text
+    }
+
+    const leftRightText = (left: string, right: string): string => {
+      const totalLength = left.length + right.length
+      if (totalLength >= lineLength) {
+        return left.substring(0, lineLength - right.length - 1) + " " + right
+      }
+      const spaces = lineLength - totalLength
+      return left + " ".repeat(spaces) + right
+    }
+
+    const line = repeatChar("=", lineLength)
+    const dashLine = repeatChar("-", lineLength)
+
+    let contenido = `${line}
+${centerText("INVERSIONES MEJIA")}
+${centerText("RTN: 08011999123456")}
+${centerText("FACTURA FISCAL")}
+${line}
+Factura No: ${factura.numero_factura}
+Fecha: ${formatDateForDisplay(factura.fecha_emision)}
+${dashLine}
+Cliente: ${factura.nombre_cliente || "CONSUMIDOR FINAL"}
+${dashLine}
+${leftRightText("DESCRIPCION", "CANT  P.UNIT   TOTAL")}
+${dashLine}`
+
+    if (factura.productos && factura.productos.length > 0) {
+      factura.productos.forEach((p) => {
+        // Línea del producto
+        const descripcion = p.nombre.length > 30 ? p.nombre.substring(0, 27) + "..." : p.nombre
+        contenido += `\n${descripcion}`
+        
+        // Línea de cantidades y precios
+        const cantStr = p.cantidad.toString().padStart(4)
+        const precioStr = p.precio_unitario.toFixed(2).padStart(8)
+        const totalStr = p.total.toFixed(2).padStart(8)
+        const espacios = lineLength - cantStr.length - precioStr.length - totalStr.length - 2
+        contenido += `\n${" ".repeat(Math.max(0, espacios))}${cantStr} ${precioStr} ${totalStr}`
+      })
+    } else {
+      contenido += `\n${centerText("Sin productos registrados")}`
+    }
+
+    contenido += `\n${dashLine}
+${leftRightText("SUBTOTAL:", `L. ${factura.monto_total.toFixed(2)}`)}
+${leftRightText("EXENTO:", "L. 0.00")}
+${leftRightText("15% ISV:", "L. 0.00")}
+${leftRightText("TOTAL A PAGAR:", `L. ${factura.monto_total.toFixed(2)}`)}
+${line}
+CAI: ${factura.codigo_cai || "N/A"}
+Rango Autorizado: 000001 al 999999
+Fecha Limite Emision: 31/12/2024
+${dashLine}
+${centerText("ORIGINAL: CLIENTE")}
+${centerText("COPIA: EMISOR")}
+${dashLine}
+${centerText("Gracias por su compra")}
+${centerText("¡Vuelva pronto!")}
+${line}
+\n\n\n`
+
+    return contenido
+  }
+
+  const imprimirEnMPTII = async (factura: Factura | FacturaDetalle) => {
+    setImprimiendo(factura.id_factura)
+    try {
+      const contenidoMPTII = formatearParaMPTII(factura)
+      
+      // Intentar impresión directa con diferentes APIs
+      let impresionExitosa = false
+      
+      // 1. Intentar con API de impresora estándar del navegador
+      try {
+        const ventanaImpresion = window.open("", "_blank")
+        if (ventanaImpresion) {
+          ventanaImpresion.document.write(`
+            <html>
+              <head>
+                <title>Factura ${factura.numero_factura} - MPT-II</title>
+                <style>
+                  body { 
+                    font-family: 'Courier New', monospace; 
+                    font-size: 12px; 
+                    width: 80mm;
+                    margin: 0 auto;
+                    padding: 2mm;
+                    background: white;
+                    line-height: 1.2;
+                  }
+                  @media print {
+                    @page { 
+                      margin: 0; 
+                      size: 80mm auto;
+                    }
+                    body { 
+                      width: 76mm;
+                      font-size: 11px;
+                    }
+                    .no-print { display: none; }
+                  }
+                  pre {
+                    white-space: pre-wrap;
+                    word-wrap: break-word;
+                    margin: 0;
+                    font-size: inherit;
+                    font-family: inherit;
+                  }
+                  .print-controls {
+                    margin-top: 10px;
+                    text-align: center;
+                    padding: 10px;
+                    background: #f5f5f5;
+                    border-radius: 5px;
+                  }
+                  .print-controls button {
+                    font-size: 14px;
+                    padding: 8px 15px;
+                    margin: 0 5px;
+                    cursor: pointer;
+                    border: 1px solid #ccc;
+                    border-radius: 3px;
+                    background: white;
+                  }
+                  .print-controls button:hover {
+                    background: #e9e9e9;
+                  }
+                </style>
+              </head>
+              <body>
+                <pre>${contenidoMPTII}</pre>
+                <div class="print-controls no-print">
+                  <p><strong>Formato optimizado para impresora MPT-II (80mm)</strong></p>
+                  <button onclick="window.print()">Imprimir en MPT-II</button>
+                  <button onclick="window.close()">Cancelar</button>
+                </div>
+                <script>
+                  // Auto-imprimir si se especifica en la URL
+                  if (window.location.search.includes('autoPrint=true')) {
+                    setTimeout(() => window.print(), 500);
+                  }
+                </script>
+              </body>
+            </html>
+          `)
+          ventanaImpresion.document.close()
+          impresionExitosa = true
+          alert("Ventana de impresión MPT-II abierta. Selecciona tu impresora MPT-II y confirma la impresión.")
+        }
+      } catch (error) {
+        console.error("Error al abrir ventana de impresión MPT-II:", error)
+      }
+
+      // 2. Si no se pudo abrir ventana, intentar con APIs de impresión directa
+      if (!impresionExitosa) {
+        // Intentar con diferentes APIs disponibles
+        const apisDisponibles = detectarAPIsImpresion()
+        
+        for (const api of apisDisponibles) {
+          try {
+            switch (api) {
+              case "printerAPI":
+                if (window.printerAPI?.printText) {
+                  impresionExitosa = await window.printerAPI.printText(contenidoMPTII)
+                }
+                break
+              case "starWebPrint":
+                if (window.StarWebPrint) {
+                  window.StarWebPrint.print([{ append: contenidoMPTII }])
+                  impresionExitosa = true
+                }
+                break
+              case "epson":
+                if (window.Epson) {
+                  window.Epson.append(contenidoMPTII)
+                  window.Epson.print()
+                  impresionExitosa = true
+                }
+                break
+            }
+            if (impresionExitosa) break
+          } catch (error) {
+            console.error(`Error con API ${api}:`, error)
+          }
+        }
+      }
+
+      if (!impresionExitosa) {
+        // Fallback: descargar como archivo de texto
+        const blob = new Blob([contenidoMPTII], { type: "text/plain;charset=utf-8" })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement("a")
+        a.href = url
+        a.download = `factura-mptii-${factura.numero_factura}.txt`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+        alert("Archivo de impresión MPT-II descargado. Ábrelo e imprímelo desde tu aplicación de impresión.")
+      }
+
+    } catch (error) {
+      console.error("Error al imprimir en MPT-II:", error)
+      const errorMessage = error instanceof Error ? error.message : "Error desconocido"
+      alert(`Error al intentar imprimir en MPT-II: ${errorMessage}`)
+    } finally {
+      setImprimiendo(null)
+    }
+  }
+
   const descargarFactura = (factura: Factura | FacturaDetalle) => {
     console.log("Descargando factura:", factura.numero_factura)
     const contenido = `FACTURA: ${factura.numero_factura}
@@ -832,11 +1061,26 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}`.trim()
                         size="sm"
                         onClick={() => imprimirFactura(factura)}
                         disabled={imprimiendo === factura.id_factura}
+                        title="Imprimir en POS (A7)"
                       >
                         {imprimiendo === factura.id_factura ? (
                           <Loader2 className="h-4 w-4 animate-spin" />
                         ) : (
                           <Printer className="h-4 w-4" />
+                        )}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => imprimirEnMPTII(factura)}
+                        disabled={imprimiendo === factura.id_factura}
+                        title="Imprimir en MPT-II (80mm)"
+                        className="bg-blue-50 hover:bg-blue-100 border-blue-200"
+                      >
+                        {imprimiendo === factura.id_factura ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <FileText className="h-4 w-4" />
                         )}
                       </Button>
                       <Button variant="outline" size="sm" onClick={() => descargarFactura(factura)}>
@@ -994,13 +1238,28 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}`.trim()
                     onClick={() => imprimirConTamañoPersonalizado(facturaSeleccionada, tamañoFuente)}
                     className="flex-1"
                     disabled={imprimiendo === facturaSeleccionada.id_factura}
+                    title="Imprimir en POS (A7)"
                   >
                     {imprimiendo === facturaSeleccionada.id_factura ? (
                       <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                     ) : (
                       <Printer className="h-4 w-4 mr-2" />
                     )}
-                    Imprimir ({tamañoFuente})
+                    POS ({tamañoFuente})
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => imprimirEnMPTII(facturaSeleccionada)}
+                    className="flex-1 bg-blue-50 hover:bg-blue-100 border-blue-200"
+                    disabled={imprimiendo === facturaSeleccionada.id_factura}
+                    title="Imprimir en MPT-II (80mm)"
+                  >
+                    {imprimiendo === facturaSeleccionada.id_factura ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <FileText className="h-4 w-4 mr-2" />
+                    )}
+                    MPT-II
                   </Button>
                   <Button variant="outline" onClick={() => descargarFactura(facturaSeleccionada)} className="flex-1">
                     <Download className="h-4 w-4 mr-2" />
