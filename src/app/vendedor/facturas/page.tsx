@@ -712,27 +712,24 @@ ${line}
       return " ".repeat(spaces) + text
     }
 
-    const leftRightText = (left: string, right: string): string => {
-      const totalLength = left.length + right.length
-      if (totalLength >= lineLength) {
-        return left.substring(0, lineLength - right.length - 1) + " " + right
-      }
-      const spaces = lineLength - totalLength
-      return left + " ".repeat(spaces) + right
-    }
-
-    const wrapText = (text: string, maxLength: number): string[] => {
-      if (text.length <= maxLength) return [text]
-      const words = text.split(' ')
+    // Función para dividir texto en múltiples líneas si es muy largo
+    const splitLongText = (text: string, maxLength: number): string[] => {
+      const words = text.split(" ")
       const lines: string[] = []
-      let currentLine = ''
+      let currentLine = ""
 
       for (const word of words) {
-        if ((currentLine + ' ' + word).length <= maxLength) {
-          currentLine = currentLine ? currentLine + ' ' + word : word
+        if (currentLine.length + word.length + 1 <= maxLength) {
+          currentLine += (currentLine ? " " : "") + word
         } else {
           if (currentLine) lines.push(currentLine)
           currentLine = word
+          if (currentLine.length > maxLength) {
+            while (currentLine.length > maxLength) {
+              lines.push(currentLine.substring(0, maxLength))
+              currentLine = currentLine.substring(maxLength)
+            }
+          }
         }
       }
       if (currentLine) lines.push(currentLine)
@@ -746,46 +743,53 @@ ${line}
 ${centerText("INVERSIONES MEJIA")}
 ${centerText("FACTURA FISCAL")}
 ${line}
-Factura No: ${factura.numero_factura}
-Fecha: ${formatDateForDisplay(factura.fecha_emision)}
+${centerText(`Factura No: ${factura.numero_factura}`)}
+${centerText(`Fecha: ${formatDateForDisplay(factura.fecha_emision)}`)}
 ${dashLine}
-Cliente:`
+${centerText("CLIENTE")}
+${dashLine}`
 
-    // Manejar nombres de cliente largos
-    const clienteLines = wrapText(factura.nombre_cliente || "CONSUMIDOR FINAL", lineLength - 2)
-    clienteLines.forEach(line => {
-      contenido += `\n${line}`
+    // Mostrar el nombre completo del cliente, centrado
+    const customerName = factura.nombre_cliente || "CONSUMIDOR FINAL"
+    const customerLines = splitLongText(customerName, lineLength)
+
+    customerLines.forEach((line) => {
+      contenido += `\n${centerText(line)}`
     })
 
-    // Ajustar encabezado de productos para letra grande
-    const maxDescLength = Math.max(8, Math.min(lineLength - 15, 12))
+    // Formato simplificado igual al POS
     contenido += `\n${dashLine}
-Item  Descripcion${" ".repeat(Math.max(1, maxDescLength - 11))}Cant  Total
+${centerText("PRODUCTOS")}
 ${dashLine}`
 
     if (factura.productos && factura.productos.length > 0) {
-      factura.productos.forEach((p, index) => {
-        const itemNum = (index + 1).toString().padStart(2)
-        const maxProductLength = Math.max(6, Math.min(lineLength - 12, 10))
-        const descripcion = p.nombre.length > maxProductLength ? p.nombre.substring(0, maxProductLength - 3) + "..." : p.nombre
-        const cantStr = p.cantidad.toString().padStart(2)
-        const totalStr = p.total.toFixed(2)
+      let itemNumber = 1
+      factura.productos.forEach((p) => {
+        // Línea del producto con numeración
+        const descripcion = `${itemNumber}. ${p.nombre}`
+        const nombre = descripcion.length > (lineLength - 2) ? descripcion.substring(0, lineLength - 5) + "..." : descripcion
         
-        // Calcular espacios para alineación con letra grande
-        const espaciosDesc = Math.max(1, lineLength - itemNum.length - descripcion.length - cantStr.length - totalStr.length - 6)
+        contenido += `\n${nombre}`
         
-        // Línea del producto ajustada para letra grande
-        contenido += `\n${itemNum}   ${descripcion}${" ".repeat(espaciosDesc)}${cantStr}  ${totalStr}`
+        // Línea separada para cantidad y total, centrada
+        const cantidadLinea = `Cant: ${p.cantidad}`
+        const totalLinea = `Total: L.${p.total.toFixed(2)}`
+        
+        contenido += `\n${centerText(cantidadLinea)}`
+        contenido += `\n${centerText(totalLinea)}`
+        contenido += `\n${dashLine}`
+        
+        itemNumber++
       })
     } else {
-      contenido += `\n${centerText("Sin productos registrados")}`
+      contenido += `\n${centerText("Sin productos")}\n${dashLine}`
     }
 
-    contenido += `\n${dashLine}
-${leftRightText("TOTAL A PAGAR:", `L. ${factura.monto_total.toFixed(2)}`)}
+    contenido += `\n${centerText("TOTAL A PAGAR")}
+${centerText(`L. ${factura.monto_total.toFixed(2)}`)}
 ${line}
-CAI: ${factura.codigo_cai || "N/A"}
-Rango Autorizado: 000001 al 999999
+${centerText(`CAI: ${factura.codigo_cai || "N/A"}`)}
+${centerText("Rango Autorizado: 000001 al 999999")}
 ${dashLine}
 ${centerText("ORIGINAL: CLIENTE")}
 ${centerText("COPIA: EMISOR")}
