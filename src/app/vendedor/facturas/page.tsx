@@ -293,20 +293,20 @@ Cliente:`
     })
 
     contenido += `\n${dashLine}
-PRODUCTO            CANT  TOTAL
+PRODUCTO                      CANT  TOTAL
 ${dashLine}`
 
     if (factura.productos && factura.productos.length > 0) {
       let itemNumber = 1
       factura.productos.forEach((p) => {
-        // Línea del producto con numeración
+        // Línea del producto con numeración - ahora con más espacio
         const descripcion = `${itemNumber}. ${p.nombre}`
-        const nombre = descripcion.length > 18 ? descripcion.substring(0, 15) + "..." : descripcion
+        const nombre = descripcion.length > 28 ? descripcion.substring(0, 25) + "..." : descripcion
         const cantStr = p.cantidad.toString().padStart(2)
         const totalStr = p.total.toFixed(2)
         
-        // Calcular espacios para alineación correcta
-        const espaciosNombre = Math.max(1, 20 - nombre.length)
+        // Calcular espacios para alineación correcta con más espacio
+        const espaciosNombre = Math.max(1, 30 - nombre.length)
         const espaciosCant = Math.max(1, 4 - cantStr.length)
         
         contenido += `\n${nombre}${" ".repeat(espaciosNombre)}${cantStr}${" ".repeat(espaciosCant)}${totalStr}`
@@ -583,15 +583,7 @@ ${line}
         <body>
           <div class="preview-header">
             <h2>Vista Previa - Factura ${factura.numero_factura}</h2>
-            <p>Formato optimizado para impresora POS A7 (74mm)</p>
-          </div>
-          
-          <div class="status-message">
-            <strong>✓ Formato A7 Organizado</strong><br>
-            • Numeración automática de productos<br>
-            • Mejor alineación y presentación<br>
-            • Información completa de la factura<br>
-            • Diseño limpio y profesional
+            <p>Formato optimizado para impresora POS (114mm)</p>
           </div>
           
           <pre>${contenido}</pre>
@@ -618,7 +610,7 @@ ${line}
       </html>
     `)
     ventanaImpresion.document.close()
-    alert("✅ Formato A7 organizado aplicado. Las facturas ahora tienen numeración automática y mejor presentación.")
+    alert("✅ Formato mejorado aplicado. Ahora usa papel ISO C6 (114mm) para mejor presentación.")
   }
 
   const agregarQRCodeSiEsPosible = async (contenido: string, factura: Factura | FacturaDetalle): Promise<string> => {

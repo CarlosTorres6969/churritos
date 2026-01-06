@@ -31,15 +31,15 @@ export const ESCPOS_COMMANDS = {
   DRAWER_KICK: "\x1B\x70\x00\x19\xFA",
 }
 
-// ISO A7 specifications (74mm x 105mm)
+// ISO C6 specifications (114mm x 162mm) - Mejor para facturas
 export const A7_CONFIG = {
-  width: 74, // mm
-  height: 105, // mm
-  charactersPerLine: 32, // characters for 74mm at 12cpi
-  charactersPerLineSmall: 42, // characters for small font
-  printableWidth: 72, // mm (accounting for margins)
-  marginLeft: 1, // mm
-  marginRight: 1, // mm
+  width: 114, // mm
+  height: 162, // mm
+  charactersPerLine: 42, // characters for 114mm at 12cpi
+  charactersPerLineSmall: 56, // characters for small font
+  printableWidth: 110, // mm (accounting for margins)
+  marginLeft: 2, // mm
+  marginRight: 2, // mm
 }
 
 export interface POSPrintOptions {
