@@ -263,20 +263,29 @@ export default function FacturasVendedor() {
       return lines
     }
 
+    const leftRightText = (left: string, right: string): string => {
+      const totalLength = left.length + right.length
+      if (totalLength >= lineLength) {
+        return left.substring(0, lineLength - right.length - 1) + " " + right
+      }
+      const spaces = lineLength - totalLength
+      return left + " ".repeat(spaces) + right
+    }
+
     const line = repeatChar("=", lineLength)
     const dashLine = repeatChar("-", lineLength)
 
     let contenido = `${line}
 ${centerText("INVERSIONES MEJIA")}
-${centerText("FACTURA POS")}
+${centerText("FACTURA")}
 ${line}
-No: ${factura.numero_factura}
-Fecha: ${formatDateForDisplay(factura.fecha_emision).substring(0, 14)}
+Factura No: ${factura.numero_factura}
+Fecha: ${formatDateForDisplay(factura.fecha_emision)}
 ${dashLine}
 Cliente:`
 
     // Mostrar el nombre completo del cliente, dividido en múltiples líneas si es necesario
-    const customerName = factura.nombre_cliente || "N/A"
+    const customerName = factura.nombre_cliente || "CONSUMIDOR FINAL"
     const customerLines = splitLongText(customerName, lineLength)
 
     customerLines.forEach((line) => {
@@ -284,29 +293,32 @@ Cliente:`
     })
 
     contenido += `\n${dashLine}
-PRODUCTO${" ".repeat(Math.max(0, lineLength - 16))}CANT  TOTAL
+${leftRightText("DESCRIPCION", "CANT  TOTAL")}
 ${dashLine}`
 
     if (factura.productos && factura.productos.length > 0) {
+      let itemNumber = 1
       factura.productos.forEach((p) => {
-        const nombre = p.nombre.length > 20 ? p.nombre.substring(0, 17) + "..." : p.nombre
+        // Línea del producto con numeración
+        const descripcion = `${itemNumber}. ${p.nombre}`
+        const nombre = descripcion.length > (lineLength - 8) ? descripcion.substring(0, lineLength - 11) + "..." : descripcion
         const cantStr = p.cantidad.toString().padStart(2)
-        const totalStr = `${p.total.toFixed(2)}`
-        const espacios = Math.max(1, lineLength - nombre.length - cantStr.length - totalStr.length - 2)
+        const totalStr = `L${p.total.toFixed(2)}`
+        const espacios = Math.max(1, lineLength - nombre.length - cantStr.length - totalStr.length - 1)
         contenido += `${nombre}${" ".repeat(espacios)}${cantStr} ${totalStr}\n`
+        itemNumber++
       })
     } else {
       contenido += `${centerText("Sin productos")}\n`
     }
 
     contenido += `${dashLine}
-TOTAL: L. ${factura.monto_total.toFixed(2)}
-${dashLine}
+${leftRightText("TOTAL:", `L${factura.monto_total.toFixed(2)}`)}
+${line}
 CAI: ${(factura.codigo_cai || "N/A").substring(0, lineLength)}
 Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}
-${line}
+${dashLine}
 ${centerText("Gracias por su compra")}
-${centerText("Sistema POS A7")}
 ${line}
 \n\n\n`
 
@@ -470,10 +482,18 @@ ${line}
               margin: 0;
               font-size: inherit;
               font-family: inherit;
+              border: 1px solid #ddd;
+              padding: 8px;
+              background: #fafafa;
+              border-radius: 4px;
             }
             .print-controls {
-              margin-top: 8px;
+              margin-top: 12px;
               text-align: center;
+              padding: 12px;
+              background: #f8f9fa;
+              border-radius: 8px;
+              border: 1px solid #e9ecef;
             }
             @media screen {
               .print-controls {
@@ -484,58 +504,117 @@ ${line}
               .print-controls {
                 display: none;
               }
+              pre {
+                border: none;
+                background: white;
+                padding: 0;
+              }
             }
             .qr-code {
               text-align: center;
-              margin: 3mm 0;
+              margin: 8px 0;
+              padding: 8px;
+              background: white;
+              border-radius: 4px;
             }
             .qr-code img {
-              width: 20mm;
-              height: 20mm;
+              width: 25mm;
+              height: 25mm;
+              border: 1px solid #ddd;
             }
             .status-message {
               padding: 12px;
               margin: 12px 0;
-              border-radius: 5px;
-              background-color: #f8f9fa;
-              border-left: 4px solid #ffc107;
-              font-size: 11px;
+              border-radius: 6px;
+              background: linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%);
+              border-left: 4px solid #2196f3;
+              font-size: 12px;
+              box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             }
             .status-message strong {
-              font-size: 12px;
+              font-size: 13px;
+              color: #1976d2;
             }
             .print-controls button {
               font-size: 14px;
-              padding: 6px 10px;
-              margin-right: 10px;
+              padding: 10px 20px;
+              margin: 0 8px;
               cursor: pointer;
+              border: 1px solid #ddd;
+              border-radius: 6px;
+              background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+              transition: all 0.2s ease;
+              font-weight: 500;
+            }
+            .print-controls button:hover {
+              background: linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%);
+              border-color: #2196f3;
+              transform: translateY(-1px);
+              box-shadow: 0 2px 8px rgba(33, 150, 243, 0.2);
+            }
+            .print-controls button:active {
+              transform: translateY(0);
+            }
+            .preview-header {
+              text-align: center;
+              margin-bottom: 16px;
+              padding: 16px;
+              background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+              color: white;
+              border-radius: 8px;
+              box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+            }
+            .preview-header h2 {
+              margin: 0 0 8px 0;
+              font-size: 18px;
+              font-weight: 600;
+            }
+            .preview-header p {
+              margin: 0;
+              font-size: 12px;
+              opacity: 0.9;
             }
           </style>
         </head>
         <body>
+          <div class="preview-header">
+            <h2>Vista Previa - Factura ${factura.numero_factura}</h2>
+            <p>Formato optimizado para impresora POS A7 (74mm)</p>
+          </div>
+          
           <div class="status-message">
-            <strong>Vista previa optimizada para impresora POS A7</strong><br>
-            Tamaño de letra aumentado para mejor legibilidad<br>
-            Seleccione "Imprimir en POS" y elija su impresora
+            <strong>✓ Formato A7 Organizado</strong><br>
+            • Numeración automática de productos<br>
+            • Mejor alineación y presentación<br>
+            • Información completa de la factura<br>
+            • Diseño limpio y profesional
           </div>
+          
           <pre>${contenido}</pre>
+          
           <div class="qr-code">
-            ${qrDataURL ? `<img src="${qrDataURL}" alt="QR Code" />` : `<small>QR: FACT-${factura.numero_factura}</small>`}
+            ${qrDataURL ? `<img src="${qrDataURL}" alt="QR Code" />` : `<div style="padding: 20px; border: 2px dashed #ccc; color: #666;">QR: FACT-${factura.numero_factura}</div>`}
           </div>
+          
           <div class="print-controls">
-            <button onclick="window.print()">Imprimir en POS</button>
-            <button onclick="window.close()">Cancelar</button>
+            <button onclick="window.print()" style="background: linear-gradient(135deg, #4caf50 0%, #45a049 100%); color: white; border-color: #4caf50;">
+              🖨️ Imprimir en POS
+            </button>
+            <button onclick="window.close()" style="background: linear-gradient(135deg, #f44336 0%, #d32f2f 100%); color: white; border-color: #f44336;">
+              ❌ Cancelar
+            </button>
           </div>
+          
           <script>
             if (window.location.search.includes('autoPrint=true')) {
-              window.print();
+              setTimeout(() => window.print(), 1000);
             }
           </script>
         </body>
       </html>
     `)
     ventanaImpresion.document.close()
-    alert("Ventana de vista previa A7 abierta. Selecciona tu impresora POS y confirma la impresión.")
+    alert("✅ Formato A7 organizado aplicado. Las facturas ahora tienen numeración automática y mejor presentación.")
   }
 
   const agregarQRCodeSiEsPosible = async (contenido: string, factura: Factura | FacturaDetalle): Promise<string> => {
@@ -640,54 +719,71 @@ ${line}
       return left + " ".repeat(spaces) + right
     }
 
+    const wrapText = (text: string, maxLength: number): string[] => {
+      if (text.length <= maxLength) return [text]
+      const words = text.split(' ')
+      const lines: string[] = []
+      let currentLine = ''
+
+      for (const word of words) {
+        if ((currentLine + ' ' + word).length <= maxLength) {
+          currentLine = currentLine ? currentLine + ' ' + word : word
+        } else {
+          if (currentLine) lines.push(currentLine)
+          currentLine = word
+        }
+      }
+      if (currentLine) lines.push(currentLine)
+      return lines
+    }
+
     const line = repeatChar("=", lineLength)
     const dashLine = repeatChar("-", lineLength)
 
     let contenido = `${line}
 ${centerText("INVERSIONES MEJIA")}
-${centerText("RTN: 08011999123456")}
 ${centerText("FACTURA FISCAL")}
 ${line}
 Factura No: ${factura.numero_factura}
 Fecha: ${formatDateForDisplay(factura.fecha_emision)}
 ${dashLine}
-Cliente: ${factura.nombre_cliente || "CONSUMIDOR FINAL"}
-${dashLine}
-${leftRightText("DESCRIPCION", "CANT  P.UNIT   TOTAL")}
+Cliente:`
+
+    // Manejar nombres de cliente largos
+    const clienteLines = wrapText(factura.nombre_cliente || "CONSUMIDOR FINAL", lineLength - 2)
+    clienteLines.forEach(line => {
+      contenido += `\n${line}`
+    })
+
+    contenido += `\n${dashLine}
+Item  Descripcion           Cant  P.Unit   Total
 ${dashLine}`
 
     if (factura.productos && factura.productos.length > 0) {
-      factura.productos.forEach((p) => {
-        // Línea del producto
-        const descripcion = p.nombre.length > 30 ? p.nombre.substring(0, 27) + "..." : p.nombre
-        contenido += `\n${descripcion}`
-        
-        // Línea de cantidades y precios
+      factura.productos.forEach((p, index) => {
+        const itemNum = (index + 1).toString().padStart(2)
+        const descripcion = p.nombre.length > 18 ? p.nombre.substring(0, 15) + "..." : p.nombre
         const cantStr = p.cantidad.toString().padStart(4)
         const precioStr = p.precio_unitario.toFixed(2).padStart(8)
         const totalStr = p.total.toFixed(2).padStart(8)
-        const espacios = lineLength - cantStr.length - precioStr.length - totalStr.length - 2
-        contenido += `\n${" ".repeat(Math.max(0, espacios))}${cantStr} ${precioStr} ${totalStr}`
+        
+        // Línea del producto
+        contenido += `\n${itemNum}   ${descripcion.padEnd(18)} ${cantStr} ${precioStr} ${totalStr}`
       })
     } else {
       contenido += `\n${centerText("Sin productos registrados")}`
     }
 
     contenido += `\n${dashLine}
-${leftRightText("SUBTOTAL:", `L. ${factura.monto_total.toFixed(2)}`)}
-${leftRightText("EXENTO:", "L. 0.00")}
-${leftRightText("15% ISV:", "L. 0.00")}
 ${leftRightText("TOTAL A PAGAR:", `L. ${factura.monto_total.toFixed(2)}`)}
 ${line}
 CAI: ${factura.codigo_cai || "N/A"}
 Rango Autorizado: 000001 al 999999
-Fecha Limite Emision: 31/12/2024
 ${dashLine}
 ${centerText("ORIGINAL: CLIENTE")}
 ${centerText("COPIA: EMISOR")}
 ${dashLine}
 ${centerText("Gracias por su compra")}
-${centerText("¡Vuelva pronto!")}
 ${line}
 \n\n\n`
 
@@ -762,9 +858,18 @@ ${line}
               <body>
                 <pre>${contenidoMPTII}</pre>
                 <div class="print-controls no-print">
-                  <p><strong>Formato optimizado para impresora MPT-II (80mm)</strong></p>
-                  <button onclick="window.print()">Imprimir en MPT-II</button>
-                  <button onclick="window.close()">Cancelar</button>
+                  <div style="text-align: center; margin-bottom: 16px; padding: 12px; background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%); border-radius: 6px; border-left: 4px solid #ffc107;">
+                    <strong style="color: #856404;">✓ Formato MPT-II Organizado</strong><br>
+                    <span style="font-size: 11px; color: #856404;">
+                      • Numeración automática de productos<br>
+                      • Tabla organizada con columnas alineadas<br>
+                      • Información completa de la empresa<br>
+                      • Diseño limpio y profesional
+                    </span>
+                  </div>
+                  <p><strong>🏪 Formato Profesional MPT-II (80mm)</strong></p>
+                  <button onclick="window.print()" style="background: linear-gradient(135deg, #4caf50 0%, #45a049 100%); color: white; border-color: #4caf50; padding: 12px 24px; border-radius: 6px; font-weight: 500;">🖨️ Imprimir en MPT-II</button>
+                  <button onclick="window.close()" style="background: linear-gradient(135deg, #f44336 0%, #d32f2f 100%); color: white; border-color: #f44336; padding: 12px 24px; border-radius: 6px; font-weight: 500;">❌ Cancelar</button>
                 </div>
                 <script>
                   // Auto-imprimir si se especifica en la URL
@@ -777,7 +882,7 @@ ${line}
           `)
           ventanaImpresion.document.close()
           impresionExitosa = true
-          alert("Ventana de impresión MPT-II abierta. Selecciona tu impresora MPT-II y confirma la impresión.")
+          alert("✅ Formato MPT-II organizado aplicado. Las facturas ahora tienen numeración automática y tabla organizada.")
         }
       } catch (error) {
         console.error("Error al abrir ventana de impresión MPT-II:", error)
