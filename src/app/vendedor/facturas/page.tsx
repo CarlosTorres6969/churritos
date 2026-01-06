@@ -91,9 +91,9 @@ interface PrintFontSize {
 }
 
 const FONT_SIZES: PrintFontSize = {
-  normal: 1,
-  large: 1.5,
-  title: 2,
+  normal: 2.0,
+  large: 3.0,
+  title: 4.0,
 }
 
 export default function FacturasVendedor() {
@@ -463,12 +463,13 @@ ${line}
           <style>
             body { 
               font-family: 'Courier New', monospace; 
-              font-size: 14px; 
+              font-size: 24px; 
+              font-weight: bold;
               width: ${A7_CONFIG.width}mm;
               margin: 0 auto;
               padding: ${A7_CONFIG.marginLeft}mm;
               background: white;
-              line-height: 1.4;
+              line-height: 1.8;
             }
             @media print {
               @page { 
@@ -477,7 +478,9 @@ ${line}
               }
               body { 
                 width: ${A7_CONFIG.printableWidth}mm;
-                font-size: 13px;
+                font-size: 22px;
+                font-weight: bold;
+                line-height: 1.6;
               }
             }
             pre {
@@ -610,7 +613,7 @@ ${line}
       </html>
     `)
     ventanaImpresion.document.close()
-    alert("✅ Formato mejorado aplicado. Ahora usa papel ISO C6 (114mm) para mejor presentación.")
+    alert("✅ Letra mucho más grande aplicada. Ahora usa papel ISO C6 (114mm) con letra extra grande.")
   }
 
   const agregarQRCodeSiEsPosible = async (contenido: string, factura: Factura | FacturaDetalle): Promise<string> => {
@@ -805,12 +808,13 @@ ${line}
                 <style>
                   body { 
                     font-family: 'Courier New', monospace; 
-                    font-size: 12px; 
+                    font-size: 18px; 
+                    font-weight: bold;
                     width: 80mm;
                     margin: 0 auto;
                     padding: 2mm;
                     background: white;
-                    line-height: 1.2;
+                    line-height: 1.6;
                   }
                   @media print {
                     @page { 
@@ -819,7 +823,9 @@ ${line}
                     }
                     body { 
                       width: 76mm;
-                      font-size: 11px;
+                      font-size: 16px;
+                      font-weight: bold;
+                      line-height: 1.4;
                     }
                     .no-print { display: none; }
                   }
@@ -878,7 +884,7 @@ ${line}
           `)
           ventanaImpresion.document.close()
           impresionExitosa = true
-          alert("✅ Formato MPT-II organizado aplicado. Las facturas ahora tienen numeración automática y tabla organizada.")
+          alert("✅ Letra mucho más grande aplicada para MPT-II. Las facturas ahora tienen letra extra grande.")
         }
       } catch (error) {
         console.error("Error al abrir ventana de impresión MPT-II:", error)
