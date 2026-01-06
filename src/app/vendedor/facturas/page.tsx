@@ -279,7 +279,7 @@ export default function FacturasVendedor() {
 ${centerText("INVERSIONES MEJIA")}
 ${centerText("FACTURA")}
 ${line}
-Factura No: ${factura.numero_factura}
+No: ${factura.numero_factura}
 Fecha: ${formatDateForDisplay(factura.fecha_emision)}
 ${dashLine}
 Cliente:`
@@ -293,7 +293,7 @@ Cliente:`
     })
 
     contenido += `\n${dashLine}
-${leftRightText("DESCRIPCION", "CANT  TOTAL")}
+PRODUCTO            CANT  TOTAL
 ${dashLine}`
 
     if (factura.productos && factura.productos.length > 0) {
@@ -301,23 +301,27 @@ ${dashLine}`
       factura.productos.forEach((p) => {
         // Línea del producto con numeración
         const descripcion = `${itemNumber}. ${p.nombre}`
-        const nombre = descripcion.length > (lineLength - 8) ? descripcion.substring(0, lineLength - 11) + "..." : descripcion
+        const nombre = descripcion.length > 18 ? descripcion.substring(0, 15) + "..." : descripcion
         const cantStr = p.cantidad.toString().padStart(2)
-        const totalStr = `L${p.total.toFixed(2)}`
-        const espacios = Math.max(1, lineLength - nombre.length - cantStr.length - totalStr.length - 1)
-        contenido += `${nombre}${" ".repeat(espacios)}${cantStr} ${totalStr}\n`
+        const totalStr = p.total.toFixed(2)
+        
+        // Calcular espacios para alineación correcta
+        const espaciosNombre = Math.max(1, 20 - nombre.length)
+        const espaciosCant = Math.max(1, 4 - cantStr.length)
+        
+        contenido += `\n${nombre}${" ".repeat(espaciosNombre)}${cantStr}${" ".repeat(espaciosCant)}${totalStr}`
         itemNumber++
       })
     } else {
-      contenido += `${centerText("Sin productos")}\n`
+      contenido += `\n${centerText("Sin productos")}`
     }
 
-    contenido += `${dashLine}
-${leftRightText("TOTAL:", `L${factura.monto_total.toFixed(2)}`)}
-${line}
+    contenido += `\n${dashLine}
+${leftRightText("TOTAL:", `L. ${factura.monto_total.toFixed(2)}`)}
+${dashLine}
 CAI: ${(factura.codigo_cai || "N/A").substring(0, lineLength)}
 Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}
-${dashLine}
+${line}
 ${centerText("Gracias por su compra")}
 ${line}
 \n\n\n`
