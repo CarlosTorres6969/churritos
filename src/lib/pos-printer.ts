@@ -31,13 +31,13 @@ export const ESCPOS_COMMANDS = {
   DRAWER_KICK: "\x1B\x70\x00\x19\xFA",
 }
 
-// ISO C6 specifications (114mm x 162mm) - Mejor para facturas
+// Papel térmico 58mm - Configuración real
 export const A7_CONFIG = {
-  width: 114, // mm
-  height: 162, // mm
-  charactersPerLine: 42, // characters for 114mm at 12cpi
-  charactersPerLineSmall: 56, // characters for small font
-  printableWidth: 110, // mm (accounting for margins)
+  width: 58, // mm
+  height: 200, // mm (largo variable)
+  charactersPerLine: 24, // characters for 58mm at 12cpi
+  charactersPerLineSmall: 32, // characters for small font
+  printableWidth: 54, // mm (accounting for margins)
   marginLeft: 2, // mm
   marginRight: 2, // mm
 }

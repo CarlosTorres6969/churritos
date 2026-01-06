@@ -223,7 +223,7 @@ export default function FacturasVendedor() {
     }
   }, [terminoBusqueda, facturas])
 
-  const formatearParaPOSA7 = (factura: Factura | FacturaDetalle, fontSize: keyof PrintFontSize = "large"): string => {
+  const formatearParaPOSA7 = (factura: Factura | FacturaDetalle, fontSize: keyof PrintFontSize = "title"): string => {
     const sizeMultiplier = FONT_SIZES[fontSize]
     const baseLineLength = A7_CONFIG.charactersPerLine
     const lineLength = Math.floor(baseLineLength / sizeMultiplier)
@@ -292,33 +292,34 @@ Cliente:`
       contenido += `\n${line}`
     })
 
-    contenido += `\n${dashLine}
-PRODUCTO                      CANT  TOTAL
-${dashLine}`
+    // Formato simplificado para 58mm con letra grande
+    contenido += `\n${dashLine}`
 
     if (factura.productos && factura.productos.length > 0) {
       let itemNumber = 1
       factura.productos.forEach((p) => {
-        // Línea del producto con numeración - ahora con más espacio
+        // Línea del producto con numeración - formato simplificado para 58mm
         const descripcion = `${itemNumber}. ${p.nombre}`
-        const nombre = descripcion.length > 28 ? descripcion.substring(0, 25) + "..." : descripcion
-        const cantStr = p.cantidad.toString().padStart(2)
-        const totalStr = p.total.toFixed(2)
+        const nombre = descripcion.length > (lineLength - 2) ? descripcion.substring(0, lineLength - 5) + "..." : descripcion
         
-        // Calcular espacios para alineación correcta con más espacio
-        const espaciosNombre = Math.max(1, 30 - nombre.length)
-        const espaciosCant = Math.max(1, 4 - cantStr.length)
+        contenido += `\n${nombre}`
         
-        contenido += `\n${nombre}${" ".repeat(espaciosNombre)}${cantStr}${" ".repeat(espaciosCant)}${totalStr}`
+        // Línea separada para cantidad y total
+        const cantidadLinea = `Cant: ${p.cantidad}`
+        const totalLinea = `Total: L.${p.total.toFixed(2)}`
+        
+        contenido += `\n${cantidadLinea}`
+        contenido += `\n${totalLinea}`
+        contenido += `\n${dashLine}`
+        
         itemNumber++
       })
     } else {
-      contenido += `\n${centerText("Sin productos")}`
+      contenido += `\n${centerText("Sin productos")}\n${dashLine}`
     }
 
-    contenido += `\n${dashLine}
-${leftRightText("TOTAL:", `L. ${factura.monto_total.toFixed(2)}`)}
-${dashLine}
+    contenido += `\n${leftRightText("TOTAL:", `L.${factura.monto_total.toFixed(2)}`)}
+${line}
 CAI: ${(factura.codigo_cai || "N/A").substring(0, lineLength)}
 Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}
 ${line}
@@ -463,24 +464,24 @@ ${line}
           <style>
             body { 
               font-family: 'Courier New', monospace; 
-              font-size: 24px; 
+              font-size: 20px; 
               font-weight: bold;
               width: ${A7_CONFIG.width}mm;
               margin: 0 auto;
               padding: ${A7_CONFIG.marginLeft}mm;
               background: white;
-              line-height: 1.8;
+              line-height: 1.6;
             }
             @media print {
               @page { 
                 margin: 0; 
-                size: ${A7_CONFIG.width}mm ${A7_CONFIG.height}mm;
+                size: ${A7_CONFIG.width}mm auto;
               }
               body { 
                 width: ${A7_CONFIG.printableWidth}mm;
-                font-size: 22px;
+                font-size: 18px;
                 font-weight: bold;
-                line-height: 1.6;
+                line-height: 1.4;
               }
             }
             pre {
@@ -613,7 +614,7 @@ ${line}
       </html>
     `)
     ventanaImpresion.document.close()
-    alert("✅ Letra mucho más grande aplicada. Ahora usa papel ISO C6 (114mm) con letra extra grande.")
+    alert("✅ Formato optimizado para papel térmico 58mm con letra grande aplicado.")
   }
 
   const agregarQRCodeSiEsPosible = async (contenido: string, factura: Factura | FacturaDetalle): Promise<string> => {
@@ -696,11 +697,13 @@ ${line}
     printableWidth: 72, // mm
   }
 
-  const formatearParaMPTII = (factura: Factura | FacturaDetalle): string => {
-    const lineLength = MPT_II_CONFIG.charactersPerLine
+  const formatearParaMPTII = (factura: Factura | FacturaDetalle, fontSize: keyof PrintFontSize = "title"): string => {
+    const sizeMultiplier = FONT_SIZES[fontSize]
+    const baseLineLength = MPT_II_CONFIG.charactersPerLine
+    const lineLength = Math.floor(baseLineLength / sizeMultiplier)
     
     const repeatChar = (char: string, length: number): string => {
-      return char.repeat(length)
+      return char.repeat(Math.floor(length * sizeMultiplier))
     }
 
     const centerText = (text: string): string => {
@@ -754,20 +757,25 @@ Cliente:`
       contenido += `\n${line}`
     })
 
+    // Ajustar encabezado de productos para letra grande
+    const maxDescLength = Math.max(8, Math.min(lineLength - 15, 12))
     contenido += `\n${dashLine}
-Item  Descripcion           Cant  P.Unit   Total
+Item  Descripcion${" ".repeat(Math.max(1, maxDescLength - 11))}Cant  Total
 ${dashLine}`
 
     if (factura.productos && factura.productos.length > 0) {
       factura.productos.forEach((p, index) => {
         const itemNum = (index + 1).toString().padStart(2)
-        const descripcion = p.nombre.length > 18 ? p.nombre.substring(0, 15) + "..." : p.nombre
-        const cantStr = p.cantidad.toString().padStart(4)
-        const precioStr = p.precio_unitario.toFixed(2).padStart(8)
-        const totalStr = p.total.toFixed(2).padStart(8)
+        const maxProductLength = Math.max(6, Math.min(lineLength - 12, 10))
+        const descripcion = p.nombre.length > maxProductLength ? p.nombre.substring(0, maxProductLength - 3) + "..." : p.nombre
+        const cantStr = p.cantidad.toString().padStart(2)
+        const totalStr = p.total.toFixed(2)
         
-        // Línea del producto
-        contenido += `\n${itemNum}   ${descripcion.padEnd(18)} ${cantStr} ${precioStr} ${totalStr}`
+        // Calcular espacios para alineación con letra grande
+        const espaciosDesc = Math.max(1, lineLength - itemNum.length - descripcion.length - cantStr.length - totalStr.length - 6)
+        
+        // Línea del producto ajustada para letra grande
+        contenido += `\n${itemNum}   ${descripcion}${" ".repeat(espaciosDesc)}${cantStr}  ${totalStr}`
       })
     } else {
       contenido += `\n${centerText("Sin productos registrados")}`
@@ -792,7 +800,7 @@ ${line}
   const imprimirEnMPTII = async (factura: Factura | FacturaDetalle) => {
     setImprimiendo(factura.id_factura)
     try {
-      const contenidoMPTII = formatearParaMPTII(factura)
+      const contenidoMPTII = formatearParaMPTII(factura, "title")
       
       // Intentar impresión directa con diferentes APIs
       let impresionExitosa = false
