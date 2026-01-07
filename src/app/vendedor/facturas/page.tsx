@@ -298,11 +298,14 @@ Cliente:`
     if (factura.productos && factura.productos.length > 0) {
       let itemNumber = 1
       factura.productos.forEach((p) => {
-        // Línea del producto con numeración - formato simplificado para 58mm
+        // Línea del producto con numeración - usar splitLongText para nombres largos
         const descripcion = `${itemNumber}. ${p.nombre}`
-        const nombre = descripcion.length > (lineLength - 2) ? descripcion.substring(0, lineLength - 5) + "..." : descripcion
+        const nombreLines = splitLongText(descripcion, lineLength)
         
-        contenido += `\n${nombre}`
+        // Mostrar todas las líneas del nombre
+        nombreLines.forEach((line) => {
+          contenido += `\n${line}`
+        })
         
         // Línea separada para cantidad y total
         const cantidadLinea = `Cant: ${p.cantidad}`
