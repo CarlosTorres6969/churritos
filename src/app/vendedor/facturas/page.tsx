@@ -91,9 +91,9 @@ interface PrintFontSize {
 }
 
 const FONT_SIZES: PrintFontSize = {
-  normal: 2.0,
-  large: 3.0,
-  title: 4.0,
+  normal: 1.5,
+  large: 2.0,
+  title: 2.5,
 }
 
 export default function FacturasVendedor() {
