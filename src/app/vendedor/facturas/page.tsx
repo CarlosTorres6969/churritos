@@ -482,7 +482,7 @@ ${line}
               }
               body { 
                 width: ${A7_CONFIG.printableWidth}mm;
-                font-size: 12px;
+                font-size: 10px;
                 font-weight: bold;
                 line-height: 1.4;
               }
@@ -841,7 +841,7 @@ ${line}
                     }
                     body { 
                       width: 76mm;
-                      font-size: 12px;
+                      font-size: 10px;
                       font-weight: bold;
                       line-height: 1.4;
                     }
