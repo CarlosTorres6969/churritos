@@ -467,7 +467,7 @@ ${line}
           <style>
             body { 
               font-family: 'Courier New', monospace; 
-              font-size: 20px; 
+              font-size: 14px; 
               font-weight: bold;
               width: ${A7_CONFIG.width}mm;
               margin: 0 auto;
@@ -482,7 +482,7 @@ ${line}
               }
               body { 
                 width: ${A7_CONFIG.printableWidth}mm;
-                font-size: 18px;
+                font-size: 12px;
                 font-weight: bold;
                 line-height: 1.4;
               }
@@ -826,7 +826,7 @@ ${line}
                 <style>
                   body { 
                     font-family: 'Courier New', monospace; 
-                    font-size: 18px; 
+                    font-size: 14px; 
                     font-weight: bold;
                     width: 80mm;
                     margin: 0 auto;
@@ -841,7 +841,7 @@ ${line}
                     }
                     body { 
                       width: 76mm;
-                      font-size: 16px;
+                      font-size: 12px;
                       font-weight: bold;
                       line-height: 1.4;
                     }
