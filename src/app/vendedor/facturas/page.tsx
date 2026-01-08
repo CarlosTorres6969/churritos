@@ -91,9 +91,9 @@ interface PrintFontSize {
 }
 
 const FONT_SIZES: PrintFontSize = {
-  normal: 1.2,
-  large: 1.5,
-  title: 1.8,
+  normal: 0.8,
+  large: 1.0,
+  title: 1.2,
 }
 
 export default function FacturasVendedor() {
@@ -377,7 +377,7 @@ ${line}
       const connected = await posprinter.initUSB()
       if (!connected) return false
       const printOptions: POSPrintOptions = {
-        fontSize: "large",
+        fontSize: "compact",
         alignment: "left",
         bold: false,
         cutPaper: true,
@@ -690,7 +690,7 @@ ${line}
   }
 
   const imprimirFactura = async (factura: Factura | FacturaDetalle) => {
-    await imprimirConTamañoPersonalizado(factura, "large")
+    await imprimirConTamañoPersonalizado(factura, "normal")
   }
 
   // Configuración para impresora MPT-II (80mm)
