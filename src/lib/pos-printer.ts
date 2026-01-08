@@ -6,8 +6,10 @@ export const ESCPOS_COMMANDS = {
   INIT: "\x1B\x40",
   // Set character size (normal)
   CHAR_SIZE_NORMAL: "\x1D\x21\x00",
-  // Set character size (small)
+  // Set character size (small) - mejor para 58mm
   CHAR_SIZE_SMALL: "\x1D\x21\x01",
+  // Set character size (compact) - optimizado para 58mm
+  CHAR_SIZE_COMPACT: "\x1D\x21\x11",
   // Set line spacing
   LINE_SPACING_DEFAULT: "\x1B\x32",
   LINE_SPACING_TIGHT: "\x1B\x33\x10",
@@ -35,15 +37,15 @@ export const ESCPOS_COMMANDS = {
 export const A7_CONFIG = {
   width: 58, // mm
   height: 200, // mm (largo variable)
-  charactersPerLine: 24, // characters for 58mm at 12cpi
-  charactersPerLineSmall: 32, // characters for small font
+  charactersPerLine: 32, // characters for 58mm at smaller font
+  charactersPerLineSmall: 42, // characters for small font
   printableWidth: 54, // mm (accounting for margins)
   marginLeft: 2, // mm
   marginRight: 2, // mm
 }
 
 export interface POSPrintOptions {
-  fontSize?: "normal" | "small" | "large"
+  fontSize?: "normal" | "small" | "large" | "compact"
   alignment?: "left" | "center" | "right"
   bold?: boolean
   underline?: boolean
@@ -157,12 +159,14 @@ export class POSPrinter {
   formatTextForA7(text: string, options: POSPrintOptions = {}): string {
     const { fontSize = "normal", alignment = "left", bold = false, underline = false } = options
 
-    const maxChars = fontSize === "small" ? A7_CONFIG.charactersPerLineSmall : A7_CONFIG.charactersPerLine
+    const maxChars = fontSize === "small" || fontSize === "compact" ? A7_CONFIG.charactersPerLineSmall : A7_CONFIG.charactersPerLine
 
     let formatted = ""
 
     // Set character size
-    if (fontSize === "small") {
+    if (fontSize === "compact") {
+      formatted += ESCPOS_COMMANDS.CHAR_SIZE_COMPACT
+    } else if (fontSize === "small") {
       formatted += ESCPOS_COMMANDS.CHAR_SIZE_SMALL
     } else {
       formatted += ESCPOS_COMMANDS.CHAR_SIZE_NORMAL

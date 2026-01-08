@@ -394,7 +394,7 @@ ${line}
       const connected = await posprinter.initSerial()
       if (!connected) return false
       const printOptions: POSPrintOptions = {
-        fontSize: "normal",
+        fontSize: "compact",
         alignment: "left",
         bold: false,
         cutPaper: true,
