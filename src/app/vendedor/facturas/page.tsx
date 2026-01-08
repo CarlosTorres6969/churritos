@@ -841,7 +841,7 @@ ${line}
                     }
                     body { 
                       width: 76mm;
-                      font-size: 10px;
+                      font-size: 12px;
                       font-weight: bold;
                       line-height: 1.4;
                     }
