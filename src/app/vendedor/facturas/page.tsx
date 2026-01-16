@@ -165,8 +165,11 @@ export default function FacturasVendedor() {
         const result = await response.json()
 
         if (result.success) {
-          setFacturas(result.data.facturas || [])
-          setFacturasFiltradas(result.data.facturas || [])
+          const facturasOrdenadas = (result.data.facturas || []).sort((a: Factura, b: Factura) => {
+            return new Date(b.fecha_emision).getTime() - new Date(a.fecha_emision).getTime()
+          })
+          setFacturas(facturasOrdenadas)
+          setFacturasFiltradas(facturasOrdenadas)
           setTotalPages(result.data.pagination?.totalPages || 1)
         } else {
           setError(result.error || "Error al cargar facturas")

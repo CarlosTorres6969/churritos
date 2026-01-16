@@ -426,7 +426,7 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
 
     let precioTipo: "completo" | "medio" | "mayorista" | "mayorista2" = clienteSeleccionado.tipo_cliente.includes("mayorista")
       ? "mayorista"
-      : "completo"
+      : "medio"
 
     if (esStockMedio(stockDisponible)) {
       if (!availablePrices.includes("medio")) {
@@ -994,11 +994,17 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
                         : esStockMedioProducto
                           ? producto.precio_medio
                           : producto.precio_completo
+                      
+                      const estaSeleccionado = detallesVenta.some(d => d.id_producto === producto.id_producto)
 
                       return (
                         <div
                           key={producto.id_producto}
-                          className="border rounded-lg p-4 hover:bg-gray-50 transition-colors"
+                          className={`border rounded-lg p-4 transition-colors ${
+                            estaSeleccionado 
+                              ? 'bg-blue-50 border-blue-300 shadow-md' 
+                              : 'hover:bg-gray-50'
+                          }`}
                         >
                           <p className="font-medium">{producto.nombre}</p>
                           <p className="text-sm text-gray-600">{producto.codigo}</p>
