@@ -44,6 +44,7 @@ export default function CreditosPendientes() {
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
   const [rutaUsuario, setRutaUsuario] = useState<RutaUsuario | null>(null)
+  const [usuarioAutenticado, setUsuarioAutenticado] = useState<{ id_personal: number; nombre: string; apellido: string } | null>(null)
   const router = useRouter()
 
   const obtenerRutaUsuario = useCallback(async (idPersonal: number) => {
@@ -120,6 +121,7 @@ export default function CreditosPendientes() {
     const obtenerUsuario = async () => {
       try {
         const user = requireAuth();
+        setUsuarioAutenticado(user);
         await obtenerRutaUsuario(user.id_personal);
       } catch (error) {
         console.error("Error al obtener el usuario autenticado:", error);
@@ -196,6 +198,25 @@ export default function CreditosPendientes() {
 
       setSuccess(`Pago de L. ${montoPago.toFixed(2)} procesado exitosamente`)
       setMontoPago(0)
+
+      // Enviar notificación por correo
+      try {
+        await fetch("/API/enviar-correo", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            tipo: "pago_credito",
+            cliente: `${creditoSeleccionado.nombre_cliente} ${creditoSeleccionado.apellido_cliente}`,
+            monto: montoPago.toFixed(2),
+            vendedor: usuarioAutenticado ? `${usuarioAutenticado.nombre} ${usuarioAutenticado.apellido}` : "No especificado",
+          }),
+        })
+      } catch (emailError) {
+        console.error("Error al enviar notificación por correo:", emailError)
+        // No mostramos error al usuario, solo lo registramos
+      }
 
       setTimeout(() => {
         setModalPagoAbierto(false)
