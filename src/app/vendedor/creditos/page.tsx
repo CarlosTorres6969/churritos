@@ -23,6 +23,8 @@ interface CreditoPendiente {
   dias_credito: number
   tasa_interes: number
   cliente?: string
+  nombre_cliente?: string
+  apellido_cliente?: string
   telefono?: string
   ultima_compra?: string
   id_ruta?: number
@@ -208,7 +210,9 @@ export default function CreditosPendientes() {
           },
           body: JSON.stringify({
             tipo: "pago_credito",
-            cliente: `${creditoSeleccionado.nombre_cliente} ${creditoSeleccionado.apellido_cliente}`,
+            cliente: creditoSeleccionado.nombre_cliente && creditoSeleccionado.apellido_cliente 
+              ? `${creditoSeleccionado.nombre_cliente} ${creditoSeleccionado.apellido_cliente}`
+              : creditoSeleccionado.cliente || "Cliente desconocido",
             monto: montoPago.toFixed(2),
             vendedor: usuarioAutenticado ? `${usuarioAutenticado.nombre} ${usuarioAutenticado.apellido}` : "No especificado",
           }),
