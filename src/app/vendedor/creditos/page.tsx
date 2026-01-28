@@ -203,7 +203,8 @@ export default function CreditosPendientes() {
 
       // Enviar notificación por correo
       try {
-        await fetch("/API/enviar-correo", {
+        console.log("Enviando notificación por correo...")
+        const emailResponse = await fetch("/API/enviar-correo", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -217,6 +218,15 @@ export default function CreditosPendientes() {
             vendedor: usuarioAutenticado ? `${usuarioAutenticado.nombre} ${usuarioAutenticado.apellido}` : "No especificado",
           }),
         })
+        
+        const emailResult = await emailResponse.json()
+        console.log("Respuesta del correo:", emailResult)
+        
+        if (emailResult.success) {
+          console.log("✅ Correo enviado exitosamente")
+        } else {
+          console.error("❌ Error al enviar correo:", emailResult.error)
+        }
       } catch (emailError) {
         console.error("Error al enviar notificación por correo:", emailError)
         // No mostramos error al usuario, solo lo registramos
