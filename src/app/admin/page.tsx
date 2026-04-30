@@ -125,116 +125,106 @@ export default function AdminDashboard() {
 
   const checkCierresPendientes = useCallback(async (vendedores: Personal[], hoy: string): Promise<number> => {
     try {
-      let pendientes = 0;
-      
+      let pendientes = 0
       for (const vendedor of vendedores) {
-        const res = await fetch(`/API/Cierre-dia?fecha=${hoy}&id_vendedor=${vendedor.id_personal}`);
-        const data = await res.json();
-        
-        if (!data.success || !data.data) {
-          pendientes++;
+        const res = await fetch(`/API/Cierre-dia?fecha=${hoy}&id_vendedor=${vendedor.id_personal}`)
+        // 404 significa que no hay cierre para ese vendedor hoy, es un caso esperado
+        if (res.status === 404 || !res.ok) {
+          pendientes++
+        } else {
+          const data = await res.json()
+          if (!data.success || !data.data) {
+            pendientes++
+          }
         }
       }
-      
-      return pendientes;
+      return pendientes
     } catch (error) {
-      console.error("Error verificando cierres pendientes:", error);
-      return 0;
+      console.error("Error verificando cierres pendientes:", error)
+      return 0
     }
-  }, []);
+  }, [])
 
   const loadDashboardData = useCallback(async () => {
     try {
-      // setLoading(true); // Se eliminó 'loading'
-      const hoy = new Date().toISOString().split("T")[0]
+      const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Tegucigalpa" })
 
-      // Cargar todas las APIs en paralelo
+      // Cargar ventas de hoy y el resto en paralelo
       const [
-        ventasRes,  
-        clientesRes,  
-        productosRes,  
-        creditosRes,  
-        facturasRes,  
-        personalRes,  
+        ventasRes,
+        clientesRes,
+        productosRes,
+        creditosRes,
+        facturasRes,
+        personalRes,
         rutasRes,
         cierresRes
-      ] = await Promise.all(
-        [
-          fetch("/API/Ventas"),
-          fetch("/API/Clientes"),
-          fetch("/API/Productos"),
-          fetch("/API/Cliente-Credito"),
-          fetch("/API/Factura"),
-          fetch("/API/Personal"),
-          fetch("/API/rutas"),
-          fetch("/API/Cierre-dia?page=1&pageSize=5"),
-        ],
-      )
+      ] = await Promise.all([
+        fetch(`/API/Ventas?fecha=${hoy}&sin_limite=true`),
+        fetch("/API/Clientes"),
+        fetch("/API/Productos"),
+        fetch("/API/Cliente-Credito"),
+        fetch(`/API/Factura?page=1&pageSize=1&fechaInicio=${hoy}&fechaFin=${hoy}`),
+        fetch("/API/Personal"),
+        fetch("/API/rutas"),
+        fetch("/API/Cierre-dia?page=1&pageSize=5"),
+      ])
 
       const [
-        ventasRaw,  
-        clientesRaw,  
-        productosRaw,  
-        creditosRaw,  
-        facturasRaw,  
-        personalRaw,  
+        ventasRaw,
+        clientesRaw,
+        productosRaw,
+        creditosRaw,
+        facturasRaw,
+        personalRaw,
         rutasRaw,
         cierresRaw
-      ] = await Promise.all(
-        [
-          ventasRes.json(),
-          clientesRes.json(),
-          productosRes.json(),
-          creditosRes.json(),
-          facturasRes.json(),
-          personalRes.json(),
-          rutasRes.json(),
-          cierresRes.json(),
-        ],
-      )
+      ] = await Promise.all([
+        ventasRes.json(),
+        clientesRes.json(),
+        productosRes.json(),
+        creditosRes.json(),
+        facturasRes.json(),
+        personalRes.json(),
+        rutasRes.json(),
+        cierresRes.json(),
+      ])
 
-      // ✅ Normalizar y tipar todas las respuestas
-      const ventas = normalizeData<Venta>(ventasRaw)
+      const ventas = ventasRaw.success && Array.isArray(ventasRaw.data?.ventas) ? ventasRaw.data.ventas as Venta[] : []
       const clientes = normalizeData<Cliente>(clientesRaw)
       const productos = normalizeData<Producto>(productosRaw)
       const creditos = normalizeData<Credito>(creditosRaw)
-      const facturas = normalizeData<Factura>(facturasRaw)
       const personal = normalizeData<Personal>(personalRaw)
       const rutas = normalizeData<Ruta>(rutasRaw)
       const cierres = normalizeData<CierreDia>(cierresRaw.data?.cierres || cierresRaw)
 
-      console.log("🔎 Ventas RAW:", ventasRaw)
-      console.log("✅ Ventas Normalizadas:", ventas)
+      // Total de facturas del día desde paginación
+      const totalFacturasHoy = facturasRaw.success ? (facturasRaw.data?.pagination?.total || 0) : 0
 
-      const ventasHoy = ventas.filter((v: Venta) => v.fecha_venta?.startsWith(hoy))
-      const todasLasVentas = ventas // Todas las ventas sin filtro de fecha
       const vendedoresActivos = personal.filter((p: Personal) => p.activo && p.rol === "vendedor")
       const rutasActivas = rutas.filter((r: Ruta) => r.activo)
-      
-      // Obtener cierres pendientes (vendedores sin cierre para hoy)
+
+      // Obtener cierres pendientes
       const vendedoresSinCierre = await checkCierresPendientes(vendedoresActivos, hoy)
 
       setStats({
-        totalVentas: todasLasVentas.length, // Usar todas las ventas
+        totalVentas: ventas.length,
         totalClientes: clientes.filter((c: Cliente) => c.activo).length,
         totalProductos: productos.filter((p: Producto) => p.activo).length,
-        montoTotal: todasLasVentas.reduce((sum: number, v: Venta) => sum + (v.total || 0), 0), // Calcular con todas las ventas
-        ventasHoy: ventasHoy.length,
+        montoTotal: ventas.reduce((sum: number, v: Venta) => sum + (v.total || 0), 0),
+        ventasHoy: ventas.length,
         creditosPendientes: creditos.filter((c: Credito) => c.saldo_pendiente > 0).length,
-        facturasPendientes: facturas.filter((f: Factura) => f.estado === "pendiente").length,
+        facturasPendientes: totalFacturasHoy,
         vendedoresActivos: vendedoresActivos.length,
         rutasActivas: rutasActivas.length,
-        cierresPendientes: vendedoresSinCierre
+        cierresPendientes: vendedoresSinCierre,
       })
 
-      // Establecer cierres recientes
       setRecentCierres(cierres.slice(0, 5))
     } catch (error) {
       console.error("Error cargando datos del dashboard:", error)
-    } finally {
-      // setLoading(false) // Se eliminó 'loading'
     }
-  }, [normalizeData, checkCierresPendientes]) // Añadir las funciones al array de dependencias
+  }, [normalizeData, checkCierresPendientes])
 
   useEffect(() => {
     const userData = localStorage.getItem("user")

@@ -38,7 +38,7 @@ interface VendedorStats {
 interface Venta {
   id_personal: number
   id_cliente: number
-  cantidad: number
+  total_productos: number
   total: number
 }
 
@@ -84,62 +84,41 @@ export default function VendedorDashboard() {
     try {
       setLoading(true)
 
-      // Cargar ventas - obtener TODAS las ventas sin filtro de fecha
-      const ventasResponse = await fetch("/API/Ventas?all=true")
+      // Cargar ventas del vendedor del día actual
+      const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Tegucigalpa" })
+      const ventasResponse = await fetch(`/API/Ventas?id_vendedor=${idPersonal}&fecha=${today}&sin_limite=true`)
       const ventasData = await ventasResponse.json()
-      // Asegurarnos de que ventas es un array
-      const ventas: Venta[] = Array.isArray(ventasData) ? ventasData : []
-      const ventasVendedor = ventas.filter((v: Venta) => v.id_personal === idPersonal)
+      const ventas: Venta[] = ventasData.success && Array.isArray(ventasData.data?.ventas) 
+        ? ventasData.data.ventas 
+        : []
+      const ventasVendedor = ventas
 
-      // Cargar créditos - obtener TODOS los créditos sin filtro de fecha
+      // Cargar créditos pendientes
       const creditosResponse = await fetch("/API/Cliente-Credito?all=true")
       const creditosData = await creditosResponse.json()
-      const creditos: Credito[] = Array.isArray(creditosData) ? creditosData : []
+      const creditos: Credito[] = creditosData.success && Array.isArray(creditosData.data)
+        ? creditosData.data
+        : Array.isArray(creditosData) ? creditosData : []
       const creditosPendientes = creditos.filter((c: Credito) => c.saldo_pendiente > 0)
 
-      // Cargar facturas - obtener TODAS las facturas sin filtro de fecha
-      const facturasResponse = await fetch("/API/Factura?all=true")
+      // Cargar facturas del vendedor del día actual
+      const facturasResponse = await fetch(`/API/Factura?id_personal=${idPersonal}&page=1&pageSize=1000&fechaInicio=${today}&fechaFin=${today}`)
       const facturasData = await facturasResponse.json()
-      const facturas: Factura[] = Array.isArray(facturasData) ? facturasData : []
+      const facturas: Factura[] = facturasData.success && Array.isArray(facturasData.data?.facturas)
+        ? facturasData.data.facturas
+        : []
       const facturasPendientes = facturas.filter((f: Factura) => f.estado === "pendiente")
 
       setStats({
         totalVentas: ventasVendedor.length,
         totalClientesAtendidos: new Set(ventasVendedor.map((v: Venta) => v.id_cliente)).size,
-        totalProductosVendidos: ventasVendedor.reduce((sum: number, v: Venta) => sum + (v.cantidad || 0), 0),
+        totalProductosVendidos: ventasVendedor.reduce((sum: number, v: Venta) => sum + (v.total_productos || 0), 0),
         montoTotal: ventasVendedor.reduce((sum: number, v: Venta) => sum + (v.total || 0), 0),
         creditosPendientes: creditosPendientes.length,
         facturasPendientes: facturasPendientes.length,
       })
     } catch (error) {
       console.error("Error cargando datos del dashboard:", error)
-      try {
-        const ventasResponse = await fetch("/API/Ventas")
-        const ventasData = await ventasResponse.json()
-        const ventas: Venta[] = Array.isArray(ventasData) ? ventasData : []
-        const ventasVendedor = ventas.filter((v: Venta) => v.id_personal === idPersonal)
-
-        const creditosResponse = await fetch("/API/Cliente-Credito")
-        const creditosData = await creditosResponse.json()
-        const creditos: Credito[] = Array.isArray(creditosData) ? creditosData : []
-        const creditosPendientes = creditos.filter((c: Credito) => c.saldo_pendiente > 0)
-
-        const facturasResponse = await fetch("/API/Factura")
-        const facturasData = await facturasResponse.json()
-        const facturas: Factura[] = Array.isArray(facturasData) ? facturasData : []
-        const facturasPendientes = facturas.filter((f: Factura) => f.estado === "pendiente")
-
-        setStats({
-          totalVentas: ventasVendedor.length,
-          totalClientesAtendidos: new Set(ventasVendedor.map((v: Venta) => v.id_cliente)).size,
-          totalProductosVendidos: ventasVendedor.reduce((sum: number, v: Venta) => sum + (v.cantidad || 0), 0),
-          montoTotal: ventasVendedor.reduce((sum: number, v: Venta) => sum + (v.total || 0), 0),
-          creditosPendientes: creditosPendientes.length,
-          facturasPendientes: facturasPendientes.length,
-        })
-      } catch (fallbackError) {
-        console.error("Error en fallback de datos del dashboard:", fallbackError)
-      }
     } finally {
       setLoading(false)
     }

@@ -107,6 +107,7 @@ export async function GET(req: NextRequest) {
       const pageSize = Number.parseInt(searchParams.get("pageSize") || "10")
       const fechaInicio = searchParams.get("fechaInicio")
       const fechaFin = searchParams.get("fechaFin")
+      const busqueda = searchParams.get("busqueda")
 
       let query = `
         SELECT 
@@ -143,6 +144,12 @@ export async function GET(req: NextRequest) {
         request.input("fechaFin", sql.DateTime, new Date(fechaFin + "T23:59:59"))
       }
 
+      // Filtrar por término de búsqueda
+      if (busqueda) {
+        query += ` AND (f.numero_factura LIKE @busqueda OR cl.nombre LIKE @busqueda OR c.codigo_cai LIKE @busqueda)`
+        request.input("busqueda", sql.VarChar(100), `%${busqueda}%`)
+      }
+
       query += ` ORDER BY f.fecha_emision DESC
                  OFFSET @offset ROWS
                  FETCH NEXT @pageSize ROWS ONLY`
@@ -152,37 +159,49 @@ export async function GET(req: NextRequest) {
 
       const facturasRequest = await request.query(query)
 
-      // Obtener detalles de productos para cada factura
-      const facturasConProductos = await Promise.all(
-        facturasRequest.recordset.map(async (factura) => {
-          try {
-            const productPool = await getConnection()
-            try {
-              const productosRequest = await productPool
-                .request()
-                .input("id_venta", sql.Int, factura.id_venta)
-                .query(
-                  `SELECT TOP 3 p.nombre, dv.cantidad, p.precio_completo as precio_unitario, dv.subtotal as total FROM Detalle_Venta dv JOIN Producto p ON dv.id_producto = p.id_producto WHERE dv.id_venta = @id_venta`,
-                )
+      // Obtener IDs de ventas para traer todos los productos en una sola query
+      const idsVentas = facturasRequest.recordset.map((f) => f.id_venta).filter(Boolean)
 
-              await closeConnection(productPool)
-              return {
-                ...factura,
-                productos: productosRequest.recordset,
-              }
-            } catch (error) {
-              await closeConnection(productPool)
-              throw error
+      let productosMap: Record<number, { nombre: string; cantidad: number; precio_unitario: number; total: number }[]> = {}
+
+      if (idsVentas.length > 0) {
+        try {
+          const productosPool = await getConnection()
+          try {
+            const productosRequest = await productosPool
+              .request()
+              .query(
+                `SELECT dv.id_venta, p.nombre, dv.cantidad, p.precio_completo as precio_unitario, dv.subtotal as total
+                 FROM Detalle_Venta dv 
+                 JOIN Producto p ON dv.id_producto = p.id_producto 
+                 WHERE dv.id_venta IN (${idsVentas.join(",")})`,
+              )
+            await closeConnection(productosPool)
+
+            // Agrupar productos por id_venta
+            for (const row of productosRequest.recordset) {
+              if (!productosMap[row.id_venta]) productosMap[row.id_venta] = []
+              productosMap[row.id_venta].push({
+                nombre: row.nombre,
+                cantidad: row.cantidad,
+                precio_unitario: row.precio_unitario,
+                total: row.total,
+              })
             }
           } catch (error) {
-            console.error("Error al cargar productos para factura:", factura.id_factura, error)
-            return {
-              ...factura,
-              productos: [],
-            }
+            await closeConnection(productosPool)
+            console.error("Error al cargar productos:", error)
           }
-        }),
-      )
+        } catch (error) {
+          console.error("Error al conectar para productos:", error)
+        }
+      }
+
+      // Combinar facturas con sus productos
+      const facturasConProductos = facturasRequest.recordset.map((factura) => ({
+        ...factura,
+        productos: productosMap[factura.id_venta] || [],
+      }))
 
       const totalCount = facturasRequest.recordset[0]?.total_count || 0
 

@@ -152,7 +152,11 @@ export default function FacturasVendedor() {
       try {
         setLoading(true)
         setError("")
-        const url = `/API/Factura?page=${currentPage}&pageSize=10&id_personal=${idPersonal}&fechaInicio=${currentDate}&fechaFin=${currentDate}`
+        let url = `/API/Factura?page=${currentPage}&pageSize=10&id_personal=${idPersonal}&fechaInicio=${currentDate}&fechaFin=${currentDate}`
+        
+        if (terminoBusqueda.trim()) {
+          url += `&busqueda=${encodeURIComponent(terminoBusqueda.trim())}`
+        }
 
         const response = await fetch(url, {
           signal: abortController.signal,
@@ -185,7 +189,7 @@ export default function FacturasVendedor() {
         setLoading(false)
       }
     },
-    [currentPage, currentDate],
+    [currentPage, currentDate, terminoBusqueda],
   )
 
   useEffect(() => {
@@ -209,22 +213,15 @@ export default function FacturasVendedor() {
     }
   }, [usuarioAutenticado, currentPage, cargarFacturas])
 
+  // Búsqueda en el servidor con debounce de 500ms
   useEffect(() => {
-    if (terminoBusqueda) {
-      const termino = terminoBusqueda.toLowerCase()
-      const filtradas = facturas.filter((factura) =>
-        [
-          factura.numero_factura.toLowerCase(),
-          factura.nombre_cliente.toLowerCase(),
-          factura.codigo_cai.toLowerCase(),
-          ...(factura.productos?.map((p) => p.nombre.toLowerCase()) || []),
-        ].some((field) => field.includes(termino)),
-      )
-      setFacturasFiltradas(filtradas)
-    } else {
-      setFacturasFiltradas(facturas)
-    }
-  }, [terminoBusqueda, facturas])
+    if (!usuarioAutenticado?.id_personal) return
+    const timeout = setTimeout(() => {
+      setCurrentPage(1)
+      cargarFacturas(usuarioAutenticado.id_personal)
+    }, 500)
+    return () => clearTimeout(timeout)
+  }, [terminoBusqueda]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const formatearParaPOSA7 = (factura: Factura | FacturaDetalle, fontSize: keyof PrintFontSize = "title"): string => {
     const sizeMultiplier = FONT_SIZES[fontSize]
