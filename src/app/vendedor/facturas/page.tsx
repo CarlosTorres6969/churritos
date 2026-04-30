@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useCallback, useMemo } from "react"
+import { useEffect, useState, useCallback, useMemo, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -96,20 +96,79 @@ const FONT_SIZES: PrintFontSize = {
   title: 1.2,
 }
 
+// Configuración para impresora MPT-II (80mm)
+const MPT_II_CONFIG = {
+  width: 80,
+  charactersPerLine: 48,
+  printableWidth: 72,
+}
+
+// Funciones de formato de texto reutilizables
+function makeRepeatChar(sizeMultiplier: number) {
+  return (char: string, length: number) => char.repeat(Math.floor(length * sizeMultiplier))
+}
+
+function makeCenterText(lineLength: number) {
+  return (text: string) => {
+    if (text.length >= lineLength) return text.substring(0, lineLength)
+    const spaces = Math.floor((lineLength - text.length) / 2)
+    return " ".repeat(spaces) + text
+  }
+}
+
+function splitLongText(text: string, maxLength: number): string[] {
+  const words = text.split(" ")
+  const lines: string[] = []
+  let currentLine = ""
+  for (const word of words) {
+    if (currentLine.length + word.length + 1 <= maxLength) {
+      currentLine += (currentLine ? " " : "") + word
+    } else {
+      if (currentLine) lines.push(currentLine)
+      currentLine = word
+      while (currentLine.length > maxLength) {
+        lines.push(currentLine.substring(0, maxLength))
+        currentLine = currentLine.substring(maxLength)
+      }
+    }
+  }
+  if (currentLine) lines.push(currentLine)
+  return lines
+}
+
+function makeLeftRightText(lineLength: number) {
+  return (left: string, right: string) => {
+    const totalLength = left.length + right.length
+    if (totalLength >= lineLength) return left.substring(0, lineLength - right.length - 1) + " " + right
+    return left + " ".repeat(lineLength - totalLength) + right
+  }
+}
+
+// Opciones de impresión estándar
+const PRINT_OPTIONS: POSPrintOptions = {
+  fontSize: "compact",
+  alignment: "left",
+  bold: false,
+  cutPaper: true,
+  feedLines: 3,
+}
+
 export default function FacturasVendedor() {
-  const [facturas, setFacturas] = useState<Factura[]>([])
   const [facturasFiltradas, setFacturasFiltradas] = useState<Factura[]>([])
   const [facturaSeleccionada, setFacturaSeleccionada] = useState<FacturaDetalle | null>(null)
   const [modalAbierto, setModalAbierto] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [cargandoLista, setCargandoLista] = useState(false)
   const [error, setError] = useState("")
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [usuarioAutenticado, setUsuarioAutenticado] = useState<UsuarioAutenticado | null>(null)
   const [terminoBusqueda, setTerminoBusqueda] = useState("")
+  const terminoBusquedaRef = useRef("")
   const [cargandoFactura, setCargandoFactura] = useState<number | null>(null)
   const [imprimiendo, setImprimiendo] = useState<number | null>(null)
   const [tamañoFuente, setTamañoFuente] = useState<keyof PrintFontSize>("large")
+  const abortControllerRef = useRef<AbortController | null>(null)
   const router = useRouter()
 
   // Función para obtener la fecha actual en la zona horaria de Honduras (America/Tegucigalpa)
@@ -146,50 +205,48 @@ export default function FacturasVendedor() {
 
   const cargarFacturas = useCallback(
     async (idPersonal: number) => {
-      abortController.abort()
-      abortController = new AbortController()
+      abortControllerRef.current?.abort()
+      abortControllerRef.current = new AbortController()
 
       try {
-        setLoading(true)
+        if (facturasFiltradas.length === 0) {
+          setLoading(true)
+        } else {
+          setCargandoLista(true)
+        }
         setError("")
         let url = `/API/Factura?page=${currentPage}&pageSize=10&id_personal=${idPersonal}&fechaInicio=${currentDate}&fechaFin=${currentDate}`
         
-        if (terminoBusqueda.trim()) {
-          url += `&busqueda=${encodeURIComponent(terminoBusqueda.trim())}`
+        if (terminoBusquedaRef.current.trim()) {
+          url += `&busqueda=${encodeURIComponent(terminoBusquedaRef.current.trim())}`
         }
 
-        const response = await fetch(url, {
-          signal: abortController.signal,
-        })
+        const response = await fetch(url, { signal: abortControllerRef.current.signal })
 
-        if (!response.ok) {
-          throw new Error(`Error HTTP: ${response.status}`)
-        }
+        if (!response.ok) throw new Error(`Error HTTP: ${response.status}`)
 
         const result = await response.json()
 
         if (result.success) {
-          const facturasOrdenadas = (result.data.facturas || []).sort((a: Factura, b: Factura) => {
-            return new Date(b.fecha_emision).getTime() - new Date(a.fecha_emision).getTime()
-          })
-          setFacturas(facturasOrdenadas)
+          const facturasOrdenadas = (result.data.facturas || []).sort((a: Factura, b: Factura) =>
+            new Date(b.fecha_emision).getTime() - new Date(a.fecha_emision).getTime()
+          )
           setFacturasFiltradas(facturasOrdenadas)
           setTotalPages(result.data.pagination?.totalPages || 1)
         } else {
           setError(result.error || "Error al cargar facturas")
         }
       } catch (error: unknown) {
-        if (error instanceof Error && error.name === "AbortError") {
-          console.log("Solicitud cancelada")
-        } else {
+        if (error instanceof Error && error.name !== "AbortError") {
           setError("Error de conexión al cargar facturas")
           console.error("Error:", error)
         }
       } finally {
         setLoading(false)
+        setCargandoLista(false)
       }
     },
-    [currentPage, currentDate, terminoBusqueda],
+    [currentPage, currentDate],
   )
 
   useEffect(() => {
@@ -216,6 +273,7 @@ export default function FacturasVendedor() {
   // Búsqueda en el servidor con debounce de 500ms
   useEffect(() => {
     if (!usuarioAutenticado?.id_personal) return
+    terminoBusquedaRef.current = terminoBusqueda
     const timeout = setTimeout(() => {
       setCurrentPage(1)
       cargarFacturas(usuarioAutenticado.id_personal)
@@ -225,111 +283,27 @@ export default function FacturasVendedor() {
 
   const formatearParaPOSA7 = (factura: Factura | FacturaDetalle, fontSize: keyof PrintFontSize = "title"): string => {
     const sizeMultiplier = FONT_SIZES[fontSize]
-    const baseLineLength = A7_CONFIG.charactersPerLine
-    const lineLength = Math.floor(baseLineLength / sizeMultiplier)
-
-    const repeatChar = (char: string, length: number): string => {
-      return char.repeat(Math.floor(length * sizeMultiplier))
-    }
-
-    const centerText = (text: string): string => {
-      if (text.length >= lineLength) return text.substring(0, lineLength)
-      const spaces = Math.floor((lineLength - text.length) / 2)
-      return " ".repeat(spaces) + text
-    }
-
-    // Función para dividir texto en múltiples líneas si es muy largo
-    const splitLongText = (text: string, maxLength: number): string[] => {
-      const words = text.split(" ")
-      const lines: string[] = []
-      let currentLine = ""
-
-      for (const word of words) {
-        if (currentLine.length + word.length + 1 <= maxLength) {
-          currentLine += (currentLine ? " " : "") + word
-        } else {
-          if (currentLine) lines.push(currentLine)
-          currentLine = word
-          // Si una palabra individual es más larga que maxLength, dividirla
-          if (currentLine.length > maxLength) {
-            while (currentLine.length > maxLength) {
-              lines.push(currentLine.substring(0, maxLength))
-              currentLine = currentLine.substring(maxLength)
-            }
-          }
-        }
-      }
-      if (currentLine) lines.push(currentLine)
-      return lines
-    }
-
-    const leftRightText = (left: string, right: string): string => {
-      const totalLength = left.length + right.length
-      if (totalLength >= lineLength) {
-        return left.substring(0, lineLength - right.length - 1) + " " + right
-      }
-      const spaces = lineLength - totalLength
-      return left + " ".repeat(spaces) + right
-    }
-
+    const lineLength = Math.floor(A7_CONFIG.charactersPerLine / sizeMultiplier)
+    const repeatChar = makeRepeatChar(sizeMultiplier)
+    const centerText = makeCenterText(lineLength)
+    const leftRightText = makeLeftRightText(lineLength)
     const line = repeatChar("=", lineLength)
     const dashLine = repeatChar("-", lineLength)
 
-    let contenido = `${line}
-${centerText("INVERSIONES MEJIA")}
-${centerText("FACTURA")}
-${line}
-No: ${factura.numero_factura}
-Fecha: ${formatDateForDisplay(factura.fecha_emision)}
-${dashLine}
-Cliente:`
-
-    // Mostrar el nombre completo del cliente, dividido en múltiples líneas si es necesario
-    const customerName = factura.nombre_cliente || "CONSUMIDOR FINAL"
-    const customerLines = splitLongText(customerName, lineLength)
-
-    customerLines.forEach((line) => {
-      contenido += `\n${line}`
-    })
-
-    // Formato simplificado para 58mm con letra grande
+    let contenido = `${line}\n${centerText("INVERSIONES MEJIA")}\n${centerText("FACTURA")}\n${line}\nNo: ${factura.numero_factura}\nFecha: ${formatDateForDisplay(factura.fecha_emision)}\n${dashLine}\nCliente:`
+    splitLongText(factura.nombre_cliente || "CONSUMIDOR FINAL", lineLength).forEach(l => { contenido += `\n${l}` })
     contenido += `\n${dashLine}`
 
-    if (factura.productos && factura.productos.length > 0) {
-      let itemNumber = 1
-      factura.productos.forEach((p) => {
-        // Línea del producto con numeración - usar splitLongText para nombres largos
-        const descripcion = `${itemNumber}. ${p.nombre}`
-        const nombreLines = splitLongText(descripcion, lineLength)
-        
-        // Mostrar todas las líneas del nombre
-        nombreLines.forEach((line) => {
-          contenido += `\n${line}`
-        })
-        
-        // Línea separada para cantidad y total
-        const cantidadLinea = `Cant: ${p.cantidad}`
-        const totalLinea = `Total: L.${p.total.toFixed(2)}`
-        
-        contenido += `\n${cantidadLinea}`
-        contenido += `\n${totalLinea}`
-        contenido += `\n${dashLine}`
-        
-        itemNumber++
+    if (factura.productos?.length) {
+      factura.productos.forEach((p, i) => {
+        splitLongText(`${i + 1}. ${p.nombre}`, lineLength).forEach(l => { contenido += `\n${l}` })
+        contenido += `\nCant: ${p.cantidad}\nTotal: L.${p.total.toFixed(2)}\n${dashLine}`
       })
     } else {
       contenido += `\n${centerText("Sin productos")}\n${dashLine}`
     }
 
-    contenido += `\n${leftRightText("TOTAL:", `L.${factura.monto_total.toFixed(2)}`)}
-${line}
-CAI: ${(factura.codigo_cai || "N/A").substring(0, lineLength)}
-Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}
-${line}
-${centerText("Gracias por su compra")}
-${line}
-\n\n\n`
-
+    contenido += `\n${leftRightText("TOTAL:", `L.${factura.monto_total.toFixed(2)}`)}\n${line}\nCAI: ${(factura.codigo_cai || "N/A").substring(0, lineLength)}\nEstado: ${factura.anulada ? "ANULADA" : "ACTIVA"}\n${line}\n${centerText("Gracias por su compra")}\n${line}\n\n\n`
     return contenido
   }
 
@@ -374,36 +348,14 @@ ${line}
 
   const intentarImpresionUSB = async (contenido: string): Promise<boolean> => {
     try {
-      const connected = await posprinter.initUSB()
-      if (!connected) return false
-      const printOptions: POSPrintOptions = {
-        fontSize: "compact",
-        alignment: "left",
-        bold: false,
-        cutPaper: true,
-        feedLines: 3,
-      }
-      return await posprinter.printReceipt(contenido, printOptions)
-    } catch {
-      return false
-    }
+      return (await posprinter.initUSB()) && await posprinter.printReceipt(contenido, PRINT_OPTIONS)
+    } catch { return false }
   }
 
   const intentarImpresionSerial = async (contenido: string): Promise<boolean> => {
     try {
-      const connected = await posprinter.initSerial()
-      if (!connected) return false
-      const printOptions: POSPrintOptions = {
-        fontSize: "compact",
-        alignment: "left",
-        bold: false,
-        cutPaper: true,
-        feedLines: 3,
-      }
-      return await posprinter.printReceipt(contenido, printOptions)
-    } catch {
-      return false
-    }
+      return (await posprinter.initSerial()) && await posprinter.printReceipt(contenido, PRINT_OPTIONS)
+    } catch { return false }
   }
 
   const intentarImpresionPOS = async (contenido: string, factura: Factura | FacturaDetalle): Promise<boolean> => {
@@ -693,117 +645,28 @@ ${line}
     await imprimirConTamañoPersonalizado(factura, "normal")
   }
 
-  // Configuración para impresora MPT-II (80mm)
-  const MPT_II_CONFIG = {
-    width: 80, // mm
-    charactersPerLine: 48, // caracteres por línea para 80mm
-    printableWidth: 72, // mm
-  }
-
   const formatearParaMPTII = (factura: Factura | FacturaDetalle, fontSize: keyof PrintFontSize = "title"): string => {
     const sizeMultiplier = FONT_SIZES[fontSize]
-    const baseLineLength = MPT_II_CONFIG.charactersPerLine
-    const lineLength = Math.floor(baseLineLength / sizeMultiplier)
-    
-    const repeatChar = (char: string, length: number): string => {
-      return char.repeat(Math.floor(length * sizeMultiplier))
-    }
-
-    const centerText = (text: string): string => {
-      if (text.length >= lineLength) return text.substring(0, lineLength)
-      const spaces = Math.floor((lineLength - text.length) / 2)
-      return " ".repeat(spaces) + text
-    }
-
-    // Función para dividir texto en múltiples líneas si es muy largo
-    const splitLongText = (text: string, maxLength: number): string[] => {
-      const words = text.split(" ")
-      const lines: string[] = []
-      let currentLine = ""
-
-      for (const word of words) {
-        if (currentLine.length + word.length + 1 <= maxLength) {
-          currentLine += (currentLine ? " " : "") + word
-        } else {
-          if (currentLine) lines.push(currentLine)
-          currentLine = word
-          if (currentLine.length > maxLength) {
-            while (currentLine.length > maxLength) {
-              lines.push(currentLine.substring(0, maxLength))
-              currentLine = currentLine.substring(maxLength)
-            }
-          }
-        }
-      }
-      if (currentLine) lines.push(currentLine)
-      return lines
-    }
-
+    const lineLength = Math.floor(MPT_II_CONFIG.charactersPerLine / sizeMultiplier)
+    const repeatChar = makeRepeatChar(sizeMultiplier)
+    const centerText = makeCenterText(lineLength)
     const line = repeatChar("=", lineLength)
     const dashLine = repeatChar("-", lineLength)
 
-    let contenido = `${line}
-${centerText("INVERSIONES MEJIA")}
-${centerText("FACTURA FISCAL")}
-${line}
-${centerText(`Factura No: ${factura.numero_factura}`)}
-${centerText(`Fecha: ${formatDateForDisplay(factura.fecha_emision)}`)}
-${dashLine}
-${centerText("CLIENTE")}
-${dashLine}`
+    let contenido = `${line}\n${centerText("INVERSIONES MEJIA")}\n${centerText("FACTURA FISCAL")}\n${line}\n${centerText(`Factura No: ${factura.numero_factura}`)}\n${centerText(`Fecha: ${formatDateForDisplay(factura.fecha_emision)}`)}\n${dashLine}\n${centerText("CLIENTE")}\n${dashLine}`
+    splitLongText(factura.nombre_cliente || "CONSUMIDOR FINAL", lineLength).forEach(l => { contenido += `\n${centerText(l)}` })
+    contenido += `\n${dashLine}\n${centerText("PRODUCTOS")}\n${dashLine}`
 
-    // Mostrar el nombre completo del cliente, centrado
-    const customerName = factura.nombre_cliente || "CONSUMIDOR FINAL"
-    const customerLines = splitLongText(customerName, lineLength)
-
-    customerLines.forEach((line) => {
-      contenido += `\n${centerText(line)}`
-    })
-
-    // Formato simplificado igual al POS
-    contenido += `\n${dashLine}
-${centerText("PRODUCTOS")}
-${dashLine}`
-
-    if (factura.productos && factura.productos.length > 0) {
-      let itemNumber = 1
-      factura.productos.forEach((p) => {
-        // Línea del producto con numeración - usar splitLongText para nombres largos
-        const descripcion = `${itemNumber}. ${p.nombre}`
-        const nombreLines = splitLongText(descripcion, lineLength)
-        
-        // Mostrar todas las líneas del nombre
-        nombreLines.forEach((line) => {
-          contenido += `\n${line}`
-        })
-        
-        // Línea separada para cantidad y total, centrada
-        const cantidadLinea = `Cant: ${p.cantidad}`
-        const totalLinea = `Total: L.${p.total.toFixed(2)}`
-        
-        contenido += `\n${centerText(cantidadLinea)}`
-        contenido += `\n${centerText(totalLinea)}`
-        contenido += `\n${dashLine}`
-        
-        itemNumber++
+    if (factura.productos?.length) {
+      factura.productos.forEach((p, i) => {
+        splitLongText(`${i + 1}. ${p.nombre}`, lineLength).forEach(l => { contenido += `\n${l}` })
+        contenido += `\n${centerText(`Cant: ${p.cantidad}`)}\n${centerText(`Total: L.${p.total.toFixed(2)}`)}\n${dashLine}`
       })
     } else {
       contenido += `\n${centerText("Sin productos")}\n${dashLine}`
     }
 
-    contenido += `\n${centerText("TOTAL A PAGAR")}
-${centerText(`L. ${factura.monto_total.toFixed(2)}`)}
-${line}
-${centerText(`CAI: ${factura.codigo_cai || "N/A"}`)}
-${centerText("Rango Autorizado: 000001 al 999999")}
-${dashLine}
-${centerText("ORIGINAL: CLIENTE")}
-${centerText("COPIA: EMISOR")}
-${dashLine}
-${centerText("Gracias por su compra")}
-${line}
-\n\n\n`
-
+    contenido += `\n${centerText("TOTAL A PAGAR")}\n${centerText(`L. ${factura.monto_total.toFixed(2)}`)}\n${line}\n${centerText(`CAI: ${factura.codigo_cai || "N/A"}`)}\n${centerText("Rango Autorizado: 000001 al 999999")}\n${dashLine}\n${centerText("ORIGINAL: CLIENTE")}\n${centerText("COPIA: EMISOR")}\n${dashLine}\n${centerText("Gracias por su compra")}\n${line}\n\n\n`
     return contenido
   }
 
@@ -1127,10 +990,13 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}`.trim()
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base sm:text-lg">Mis Facturas Emitidas</CardTitle>
+            <CardTitle className="text-base sm:text-lg flex items-center gap-2">
+              Mis Facturas Emitidas
+              {cargandoLista && <Loader2 className="h-4 w-4 animate-spin text-blue-500" />}
+            </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
+            <div className={`space-y-4 ${cargandoLista ? "opacity-50 pointer-events-none" : ""}`}>
               {facturasFiltradas.map((factura) => (
                 <div
                   key={factura.id_factura}
@@ -1231,7 +1097,7 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}`.trim()
 
             {facturasFiltradas.length > 0 && (
               <div className="mt-4 text-xs sm:text-sm text-gray-600 text-center">
-                Mostrando {facturasFiltradas.length} de {facturas.length} facturas en esta página
+                Mostrando {facturasFiltradas.length} facturas
                 {totalPages > 1 && ` (Página ${currentPage} de ${totalPages})`}
               </div>
             )}
