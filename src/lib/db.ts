@@ -22,3 +22,4 @@ export async function closeConnection(pool: sql.ConnectionPool) {
     console.error("Error al cerrar la conexión:", err)
   }
 }
+//No tocar 
