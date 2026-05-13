@@ -2,7 +2,7 @@ import sql from "mssql"
 
 // Usar una cadena de conexión completa
 const connectionString = process.env.DB_CONNECTION_STRING || 
-  "Server=localhost;Database=InversionesMejia;User Id=JCK;Password=oracle;Encrypt=false;TrustServerCertificate=true;";
+  "Server=tcp:invermejia.database.windows.net,1433;Database=MejiaDB;User Id=adminmejia;Password=Inver@2001;Encrypt=true;TrustServerCertificate=true;Connection Timeout=30;";
 
 // Obtener conexión a la base de datos
 export async function getConnection() {
@@ -22,3 +22,4 @@ export async function closeConnection(pool: sql.ConnectionPool) {
     console.error("Error al cerrar la conexión:", err)
   }
 }
+//No tocar 

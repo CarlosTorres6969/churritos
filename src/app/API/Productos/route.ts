@@ -9,6 +9,7 @@ type Producto = {
   precio_completo: number;
   precio_medio: number;
   precio_mayorista: number;
+  precio_mayorista2: number;
   activo?: boolean;
 };
 
@@ -22,8 +23,8 @@ export async function GET(req: NextRequest) {
     pool = await getConnection();
 
     const query = includeInactive
-      ? `SELECT id_producto, codigo, nombre, descripcion, precio_completo, precio_medio, precio_mayorista, activo FROM Producto`
-      : `SELECT id_producto, codigo, nombre, descripcion, precio_completo, precio_medio, precio_mayorista FROM Producto WHERE activo = 1`;
+      ? `SELECT id_producto, codigo, nombre, descripcion, precio_completo, precio_medio, precio_mayorista, precio_mayorista2, activo FROM Producto`
+      : `SELECT id_producto, codigo, nombre, descripcion, precio_completo, precio_medio, precio_mayorista, precio_mayorista2 FROM Producto WHERE activo = 1`;
 
     const result = await pool.request().query(query);
 
@@ -77,7 +78,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Validación de precios
-    const validarPrecio = (precio: any, campo: string) => {
+    const validarPrecio = (precio: unknown, campo: string) => {
       const num = Number(precio);
       if (isNaN(num) || num < 0) {
         throw new Error(`El ${campo} debe ser un número positivo`);
@@ -88,7 +89,8 @@ export async function POST(req: NextRequest) {
     const precios = {
       completo: validarPrecio(requestData.precio_completo, "precio completo"),
       medio: validarPrecio(requestData.precio_medio, "precio medio"),
-      mayorista: validarPrecio(requestData.precio_mayorista, "precio mayorista")
+      mayorista: validarPrecio(requestData.precio_mayorista, "precio mayorista"),
+      mayorista2: validarPrecio(requestData.precio_mayorista2, "precio mayorista2")
     };
 
     // Validación de longitudes máximas
@@ -117,6 +119,7 @@ export async function POST(req: NextRequest) {
       precio_completo: precios.completo,
       precio_medio: precios.medio,
       precio_mayorista: precios.mayorista,
+      precio_mayorista2: precios.mayorista2,
       activo: requestData.activo !== false,
     };
 
@@ -148,11 +151,12 @@ export async function POST(req: NextRequest) {
       .input('precio_completo', productoData.precio_completo)
       .input('precio_medio', productoData.precio_medio)
       .input('precio_mayorista', productoData.precio_mayorista)
+      .input('precio_mayorista2', productoData.precio_mayorista2)
       .input('activo', productoData.activo ? 1 : 0)
       .query(`
-        INSERT INTO Producto (codigo, nombre, descripcion, precio_completo, precio_medio, precio_mayorista, activo)
+        INSERT INTO Producto (codigo, nombre, descripcion, precio_completo, precio_medio, precio_mayorista, precio_mayorista2, activo)
         OUTPUT INSERTED.id_producto
-        VALUES (@codigo, @nombre, @descripcion, @precio_completo, @precio_medio, @precio_mayorista, @activo)
+        VALUES (@codigo, @nombre, @descripcion, @precio_completo, @precio_medio, @precio_mayorista, @precio_mayorista2, @activo)
       `);
 
     const nuevoProducto = {
@@ -232,7 +236,7 @@ export async function PUT(req: NextRequest) {
     }
 
     // Validación de precios
-    const validarPrecio = (precio: any, campo: string) => {
+    const validarPrecio = (precio: unknown, campo: string) => {
       const num = Number(precio);
       if (isNaN(num) || num < 0) {
         throw new Error(`El ${campo} debe ser un número positivo`);
@@ -243,18 +247,20 @@ export async function PUT(req: NextRequest) {
     const precios = {
       completo: validarPrecio(requestData.precio_completo, "precio completo"),
       medio: validarPrecio(requestData.precio_medio, "precio medio"),
-      mayorista: validarPrecio(requestData.precio_mayorista, "precio mayorista")
+      mayorista: validarPrecio(requestData.precio_mayorista, "precio mayorista"),
+      mayorista2: validarPrecio(requestData.precio_mayorista2, "precio mayorista2")
     };
 
     // 3. Preparar datos para actualización (excluyendo código)
     const productoActualizado = {
       id_producto: requestData.id_producto,
-      codigo: requestData.codigo ? String(requestData.codigo).trim() : codigoOriginal, 
+      codigo: requestData.codigo ? String(requestData.codigo).trim() : codigoOriginal,
       nombre,
       descripcion: requestData.descripcion ? String(requestData.descripcion).trim() : null,
       precio_completo: precios.completo,
       precio_medio: precios.medio,
       precio_mayorista: precios.mayorista,
+      precio_mayorista2: precios.mayorista2,
       activo: requestData.activo !== undefined ? Boolean(requestData.activo) : activoActual,
     };
 
@@ -262,12 +268,13 @@ export async function PUT(req: NextRequest) {
     await pool
       .request()
       .input('id_producto', productoActualizado.id_producto)
-      .input('codigo', productoActualizado.codigo) 
+      .input('codigo', productoActualizado.codigo)
       .input('nombre', productoActualizado.nombre)
       .input('descripcion', productoActualizado.descripcion)
       .input('precio_completo', productoActualizado.precio_completo)
       .input('precio_medio', productoActualizado.precio_medio)
       .input('precio_mayorista', productoActualizado.precio_mayorista)
+      .input('precio_mayorista2', productoActualizado.precio_mayorista2)
       .input('activo', productoActualizado.activo ? 1 : 0)
       .query(`
         UPDATE Producto SET
@@ -277,6 +284,7 @@ export async function PUT(req: NextRequest) {
           precio_completo = @precio_completo,
           precio_medio = @precio_medio,
           precio_mayorista = @precio_mayorista,
+          precio_mayorista2 = @precio_mayorista2,
           activo = @activo
         WHERE id_producto = @id_producto
       `);
@@ -288,7 +296,7 @@ export async function PUT(req: NextRequest) {
       .query('SELECT * FROM Producto WHERE id_producto = @id_producto');
 
     const producto = result.recordset[0];
-    
+
     return NextResponse.json({
       success: true,
       data: {
@@ -312,6 +320,7 @@ export async function PUT(req: NextRequest) {
     if (pool) await closeConnection(pool);
   }
 }
+
 // DELETE - Eliminar producto por ID
 export async function DELETE(req: NextRequest) {
   let pool;

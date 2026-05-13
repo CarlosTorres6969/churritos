@@ -1,28 +1,26 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getConnection, closeConnection } from "@/lib/db"
-import { Personal } from "@/lib/types"
-
+import type { Personal } from "@/lib/types"
 
 // GET - Obtener todo el personal activo
-export async function GET(req: NextRequest) {
+export async function GET() {
   let pool
   try {
     pool = await getConnection()
 
     const result = await pool.request().query(`
       SELECT id_personal, nombre, apellido, telefono, direccion, email,
-             fecha_registro, usuario, rol, fecha_contratacion
+             fecha_registro, usuario, contrasena, rol, fecha_contratacion, activo
       FROM Personal
-      WHERE activo = 1
     `)
 
+    // Log genérico y seguro
+    console.log(`Se realizó una petición GET a /API/Personal. Usuarios obtenidos: ${result.recordset.length}`)
+
     return NextResponse.json(result.recordset, { status: 200 })
-  } catch (error) {
-    console.error("Error al obtener personal:", error)
-    return NextResponse.json(
-      { error: "Error al obtener personal" }, 
-      { status: 500 }
-    )
+  } catch {
+    console.error("Error al obtener personal (detalles censurados)")
+    return NextResponse.json({ error: "Error al obtener personal" }, { status: 500 })
   } finally {
     if (pool) await closeConnection(pool)
   }
@@ -32,14 +30,10 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   let pool
   try {
-    const personalData: Omit<Personal, 'id_personal'> = await req.json()
-    
-    // Validación básica
+    const personalData: Omit<Personal, "id_personal"> = await req.json()
+
     if (!personalData.nombre || !personalData.apellido || !personalData.usuario || !personalData.contrasena) {
-      return NextResponse.json(
-        { error: "Nombre, apellido, usuario y contraseña son requeridos" },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: "Nombre, apellido, usuario y contraseña son requeridos" }, { status: 400 })
     }
 
     pool = await getConnection()
@@ -52,7 +46,7 @@ export async function POST(req: NextRequest) {
       .input("direccion", personalData.direccion || null)
       .input("email", personalData.email || null)
       .input("usuario", personalData.usuario)
-      .input("contrasena", personalData.contrasena) // En producción, usaría hash
+      .input("contrasena", personalData.contrasena)
       .input("rol", personalData.rol || "vendedor")
       .input("fecha_contratacion", personalData.fecha_contratacion || new Date())
       .query(`
@@ -67,21 +61,20 @@ export async function POST(req: NextRequest) {
         SELECT SCOPE_IDENTITY() AS id_personal
       `)
 
+    console.log(`Nuevo personal creado (ID: ${result.recordset[0].id_personal})`) // log seguro
+
     return NextResponse.json(
-      { 
+      {
         id_personal: result.recordset[0].id_personal,
         ...personalData,
         activo: true,
-        fecha_registro: new Date()
-      }, 
-      { status: 201 }
+        fecha_registro: new Date(),
+      },
+      { status: 201 },
     )
-  } catch (error) {
-    console.error("Error al crear personal:", error)
-    return NextResponse.json(
-      { error: "Error al crear personal" },
-      { status: 500 }
-    )
+  } catch {
+    console.error("Error al crear personal (detalles censurados)")
+    return NextResponse.json({ error: "Error al crear personal" }, { status: 500 })
   } finally {
     if (pool) await closeConnection(pool)
   }
@@ -92,12 +85,9 @@ export async function PUT(req: NextRequest) {
   let pool
   try {
     const personalData: Personal = await req.json()
-    
+
     if (!personalData.id_personal) {
-      return NextResponse.json(
-        { error: "ID de personal es requerido" },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: "ID de personal es requerido" }, { status: 400 })
     }
 
     pool = await getConnection()
@@ -128,13 +118,12 @@ export async function PUT(req: NextRequest) {
         WHERE id_personal = @id_personal
       `)
 
+    console.log(`Personal actualizado (ID: ${personalData.id_personal})`) // log seguro
+
     return NextResponse.json(personalData, { status: 200 })
-  } catch (error) {
-    console.error("Error al actualizar personal:", error)
-    return NextResponse.json(
-      { error: "Error al actualizar personal" },
-      { status: 500 }
-    )
+  } catch {
+    console.error("Error al actualizar personal (detalles censurados)")
+    return NextResponse.json({ error: "Error al actualizar personal" }, { status: 500 })
   } finally {
     if (pool) await closeConnection(pool)
   }
@@ -145,12 +134,9 @@ export async function DELETE(req: NextRequest) {
   let pool
   try {
     const { id_personal } = await req.json()
-    
+
     if (!id_personal) {
-      return NextResponse.json(
-        { error: "ID de personal es requerido" },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: "ID de personal es requerido" }, { status: 400 })
     }
 
     pool = await getConnection()
@@ -164,16 +150,12 @@ export async function DELETE(req: NextRequest) {
         WHERE id_personal = @id_personal
       `)
 
-    return NextResponse.json(
-      { message: "Personal desactivado correctamente" },
-      { status: 200 }
-    )
-  } catch (error) {
-    console.error("Error al desactivar personal:", error)
-    return NextResponse.json(
-      { error: "Error al desactivar personal" },
-      { status: 500 }
-    )
+    console.log(`Personal desactivado (ID: ${id_personal})`) // log seguro
+
+    return NextResponse.json({ message: "Personal desactivado correctamente" }, { status: 200 })
+  } catch {
+    console.error("Error al desactivar personal (detalles censurados)")
+    return NextResponse.json({ error: "Error al desactivar personal" }, { status: 500 })
   } finally {
     if (pool) await closeConnection(pool)
   }

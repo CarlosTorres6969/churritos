@@ -30,28 +30,47 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const id_cliente = searchParams.get("id_cliente");
   const activo = searchParams.get("activo");
+  const id_ruta = searchParams.get("id_ruta"); // Nuevo parámetro para filtrar por ruta
 
   let pool;
   try {
     pool = await getConnection();
 
     let query = `
-      SELECT id_credito, id_cliente, limite_credito, saldo_actual, saldo_vencido, 
-             fecha_actualizacion, activo, dias_credito, tasa_interes 
-      FROM Cliente_Credito
+      SELECT 
+        cc.id_credito, 
+        cc.id_cliente, 
+        cc.limite_credito, 
+        cc.saldo_actual, 
+        cc.saldo_vencido, 
+        cc.fecha_actualizacion, 
+        cc.activo, 
+        cc.dias_credito, 
+        cc.tasa_interes,
+        c.nombre as cliente,
+        c.telefono,
+        c.id_ruta
+      FROM Cliente_Credito cc
+      JOIN Clientes c ON cc.id_cliente = c.id_cliente
     `;
     
-    let conditions: string[] = [];
-    let request = pool.request();
+    const conditions: string[] = [];
+    const request = pool.request();
 
     if (id_cliente) {
-      conditions.push("id_cliente = @id_cliente");
+      conditions.push("cc.id_cliente = @id_cliente");
       request.input('id_cliente', parseInt(id_cliente));
     }
 
     if (activo) {
-      conditions.push("activo = @activo");
+      conditions.push("cc.activo = @activo");
       request.input('activo', activo === 'true' ? 1 : 0);
+    }
+
+    // Filtrar por ruta del vendedor
+    if (id_ruta) {
+      conditions.push("c.id_ruta = @id_ruta");
+      request.input('id_ruta', parseInt(id_ruta));
     }
 
     if (conditions.length > 0) {
@@ -60,7 +79,11 @@ export async function GET(req: NextRequest) {
 
     const result = await request.query(query);
 
-    const creditos = result.recordset.map((credito: ClienteCreditoDB) => ({
+    const creditos = result.recordset.map((credito: ClienteCreditoDB & { 
+      cliente: string; 
+      telefono: string; 
+      id_ruta: number 
+    }) => ({
       id_credito: credito.id_credito,
       id_cliente: credito.id_cliente,
       limite_credito: credito.limite_credito,
@@ -69,7 +92,10 @@ export async function GET(req: NextRequest) {
       fecha_actualizacion: new Date(credito.fecha_actualizacion).toISOString().split('T')[0],
       activo: credito.activo,
       dias_credito: credito.dias_credito,
-      tasa_interes: credito.tasa_interes
+      tasa_interes: credito.tasa_interes,
+      cliente: credito.cliente,
+      telefono: credito.telefono,
+      id_ruta: credito.id_ruta
     }));
 
     return NextResponse.json(
