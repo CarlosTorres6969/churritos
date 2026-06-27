@@ -18,6 +18,7 @@ interface Producto {
   id_producto: number
   codigo: string
   nombre: string
+  descripcion?: string | null
   precio_completo: number
   precio_medio: number
   precio_mayorista: number
@@ -130,6 +131,16 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
 
   const esStockMedio = (stock: number): boolean => {
     return Math.abs(stock - 0.5) < 0.1
+  }
+
+  // Productos cuya descripción pertenece a este grupo NUNCA usan precio_medio.
+  // Siempre se venden con precio_completo, sin importar el stock, tipo de cliente
+  // ni la lógica automática de precio medio.
+  const PRODUCTOS_SOLO_PRECIO_COMPLETO = ["G", "C", "MEGA", "CCP", "CHF", "CF"]
+
+  const usaSoloPrecioCompleto = (producto: Producto): boolean => {
+    const descripcion = (producto.descripcion ?? "").trim().toUpperCase()
+    return PRODUCTOS_SOLO_PRECIO_COMPLETO.includes(descripcion)
   }
 
   const fetchClientAndPrices = useCallback(
@@ -264,6 +275,7 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
               id_producto: item.id_producto,
               codigo: productoCompleto?.codigo || item.producto_codigo || "",
               nombre: productoCompleto?.nombre || item.producto_nombre || "Producto sin nombre",
+              descripcion: productoCompleto?.descripcion ?? null,
               precio_completo: productoCompleto?.precio_completo || item.precio_completo || 0,
               precio_medio: productoCompleto?.precio_medio || item.precio_medio || 0,
               precio_mayorista: productoCompleto?.precio_mayorista || item.precio_mayorista || 0,
@@ -424,16 +436,21 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
       return
     }
 
-    let precioTipo: "completo" | "medio" | "mayorista" | "mayorista2" = clienteSeleccionado.tipo_cliente.includes("mayorista")
-      ? "mayorista"
-      : "medio"
+    let precioTipo: "completo" | "medio" | "mayorista" | "mayorista2"
 
-    if (esStockMedio(stockDisponible)) {
-      if (!availablePrices.includes("medio")) {
-        setError(`No se puede vender ${producto.nombre} con stock de 0.5 a este cliente, ya que no permite precio medio`)
-        return
+    if (usaSoloPrecioCompleto(producto)) {
+      // Estos productos siempre se venden con precio completo, nunca medio.
+      precioTipo = "completo"
+    } else {
+      precioTipo = clienteSeleccionado.tipo_cliente.includes("mayorista") ? "mayorista" : "medio"
+
+      if (esStockMedio(stockDisponible)) {
+        if (!availablePrices.includes("medio")) {
+          setError(`No se puede vender ${producto.nombre} con stock de 0.5 a este cliente, ya que no permite precio medio`)
+          return
+        }
+        precioTipo = "medio"
       }
-      precioTipo = "medio"
     }
 
     const precio = obtenerPrecio(producto, precioTipo)
@@ -479,7 +496,10 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
     }
 
     let nuevoTipoPrecio = detalle.tipo_precio
-    if (esStockMedio(stockDisponible)) {
+    if (usaSoloPrecioCompleto(detalle.producto)) {
+      // Estos productos nunca cambian a precio medio, ni con stock de 0.5.
+      nuevoTipoPrecio = "completo"
+    } else if (esStockMedio(stockDisponible)) {
       if (!availablePrices.includes("medio")) {
         setError(`No se puede vender ${detalle.producto.nombre} con stock de 0.5 a este cliente, ya que no permite precio medio`)
         return
@@ -504,6 +524,14 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
   }
 
   const cambiarTipoPrecio = (detalle: DetalleVenta, nuevoTipo: "completo" | "medio" | "mayorista" | "mayorista2") => {
+    const esSoloCompleto = usaSoloPrecioCompleto(detalle.producto)
+
+    // Estos productos nunca aceptan precio medio: se cancela y se mantiene completo.
+    if (esSoloCompleto && nuevoTipo === "medio") {
+      setError(`${detalle.producto.nombre} no permite precio medio, se mantiene precio completo`)
+      return
+    }
+
     if (!availablePrices.includes(nuevoTipo)) {
       setError(`El tipo de precio ${nuevoTipo} no está disponible para este cliente`)
       return
@@ -511,7 +539,7 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
 
     const stockDisponible = Math.abs(detalle.producto.stock) < 0.01 ? 0 : detalle.producto.stock
 
-    if (esStockMedio(stockDisponible) && nuevoTipo !== "medio") {
+    if (!esSoloCompleto && esStockMedio(stockDisponible) && nuevoTipo !== "medio") {
       setError(`Solo se puede usar precio medio para ${detalle.producto.nombre} con stock de 0.5`)
       return
     }
@@ -817,8 +845,10 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
                   <>
                     {detallesVenta.map((detalle, index) => {
                       const stockDisponible = Math.abs(detalle.producto.stock) < 0.01 ? 0 : detalle.producto.stock
-                      const esStockMedioProducto = esStockMedio(stockDisponible)
-                      
+                      const esSoloCompleto = usaSoloPrecioCompleto(detalle.producto)
+                      // Para los productos de solo precio completo, nunca se aplica la lógica de precio medio.
+                      const esStockMedioProducto = !esSoloCompleto && esStockMedio(stockDisponible)
+
                       return (
                         <div key={index} className="border rounded-lg p-3 space-y-2">
                           <div className="flex justify-between items-start">
@@ -875,12 +905,14 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
                                 {esStockMedioProducto && " (Forzado a medio)"}
                               </SelectTrigger>
                               <SelectContent>
-                                {availablePrices.map((price) => (
-                                  <SelectItem key={price} value={price} disabled={esStockMedioProducto && price !== "medio"}>
-                                    {price === "mayorista2" ? "Mayorista 2" : price.charAt(0).toUpperCase() + price.slice(1)}
-                                    {esStockMedioProducto && price !== "medio" && " (No disponible)"}
-                                  </SelectItem>
-                                ))}
+                                {availablePrices
+                                  .filter((price) => !(esSoloCompleto && price === "medio"))
+                                  .map((price) => (
+                                    <SelectItem key={price} value={price} disabled={esStockMedioProducto && price !== "medio"}>
+                                      {price === "mayorista2" ? "Mayorista 2" : price.charAt(0).toUpperCase() + price.slice(1)}
+                                      {esStockMedioProducto && price !== "medio" && " (No disponible)"}
+                                    </SelectItem>
+                                  ))}
                               </SelectContent>
                             </Select>
                             {esStockMedioProducto && (
@@ -986,15 +1018,19 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
                   <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                     {productosFiltrados.map((producto) => {
                       const stockDisponible = Math.abs(producto.stock) < 0.01 ? 0 : producto.stock
-                      const esStockMedioProducto = esStockMedio(stockDisponible)
-                      const precioMostrar = clienteSeleccionado?.tipo_cliente.includes("mayorista")
-                        ? esStockMedioProducto
-                          ? producto.precio_medio
-                          : producto.precio_mayorista
-                        : esStockMedioProducto
-                          ? producto.precio_medio
-                          : producto.precio_completo
-                      
+                      const esSoloCompleto = usaSoloPrecioCompleto(producto)
+                      // Para los productos de solo precio completo, nunca se aplica la lógica de precio medio.
+                      const esStockMedioProducto = !esSoloCompleto && esStockMedio(stockDisponible)
+                      const precioMostrar = esSoloCompleto
+                        ? producto.precio_completo
+                        : clienteSeleccionado?.tipo_cliente.includes("mayorista")
+                          ? esStockMedioProducto
+                            ? producto.precio_medio
+                            : producto.precio_mayorista
+                          : esStockMedioProducto
+                            ? producto.precio_medio
+                            : producto.precio_completo
+
                       const estaSeleccionado = detallesVenta.some(d => d.id_producto === producto.id_producto)
 
                       return (
@@ -1013,7 +1049,7 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
                             {esStockMedioProducto && ' (Última unidad)'}
                           </p>
                           <p className="text-sm font-medium mt-1">
-                            Precio: L. {precioMostrar.toFixed(2)} ({esStockMedioProducto ? 'medio' : clienteSeleccionado?.tipo_cliente.includes("mayorista") ? 'mayorista' : 'completo'})
+                            Precio: L. {precioMostrar.toFixed(2)} ({esSoloCompleto ? 'Precio Completo' : esStockMedioProducto ? 'medio' : clienteSeleccionado?.tipo_cliente.includes("mayorista") ? 'mayorista' : 'completo'})
                           </p>
                           <Button
                             onClick={() => agregarProducto(producto)}
