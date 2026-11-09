@@ -1,0 +1,7 @@
+.env*
+.git
+.next
+.vercel
+.playwright-cli
+node_modules
+*.tsbuildinfo

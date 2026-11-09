@@ -1,0 +1,65 @@
+# Publicación — 8 de noviembre de 2026
+
+La versión está activa en https://invesionesmj-red.vercel.app. El código se
+integró en `main`; Azure SQL continúa siendo la base real de producción.
+`ChurritosDev` y sus credenciales de prueba permanecen separados.
+
+## Base y credenciales
+
+- Se verificaron respaldos retenidos completos, diferenciales y de log en Azure
+  antes de migrar. El último log consultado terminó el 9 de noviembre a las
+  01:47:23 UTC, todavía 8 de noviembre en Honduras.
+- Se pausó el proyecto en Vercel y se verificó HTTP 503 en sus dominios y en el
+  despliegue anterior. Se comprobó que no hubiera solicitudes SQL de usuarios
+  activas antes de aplicar cambios.
+- Se aplicaron 001–005 y la conversión de las cinco contraseñas a scrypt en una
+  transacción confirmada. Todas las cuentas migradas exigen cambio de contraseña
+  en su siguiente ingreso; se conserva la contraseña anterior para ese ingreso.
+- Se compararon antes y después los conteos de ventas, detalles, facturas,
+  clientes y personal, y los totales de ventas, existencias, deuda y saldo vencido.
+  Esos valores se conservaron.
+- La actualización del historial superó inicialmente el tiempo de espera. Los
+  intentos fallidos se revirtieron. Se corrigió el uso de `requestTimeout` y se
+  completó con un límite de 15 minutos por lote, sin cambiar el plan Basic.
+- Se creó una cuenta de ejecución en `churritos_app`, sin `db_owner`, sin permiso
+  para editar auditoría y sin permiso para insertar en el historial de migraciones.
+- Se rotó la contraseña del operador SQL expuesta, se renovó la caché de
+  autenticación y se comprobó que la contraseña anterior ya no conecta.
+- Vercel y `.env` usan la cuenta limitada en la misma base Azure. Las variables
+  SQL quedan exclusivamente en el ámbito de producción y como sensibles. Los
+  `.env*` se excluyen tanto de Git como de las subidas de la CLI a Vercel.
+- El acceso administrativo nuevo se conserva únicamente en el archivo privado
+  local `.env.operator.production.local`; no se utiliza desde la aplicación.
+
+## Aplicación
+
+La compilación de producción se preparó antes de migrar y se promovió después
+de verificar la base. Se retiró la pausa y se comprobó el enlace público:
+
+- Ingreso: HTTP 200.
+- Sesión anónima: HTTP 401, sin caché.
+- Login desde otro origen: HTTP 403.
+- Login con usuario inexistente desde el origen correcto: HTTP 401, comprobando
+  la ruta de autenticación y su conexión SQL sin crear una cuenta de prueba.
+- HTML y diez recursos JavaScript/CSS cargados por el ingreso: no contienen las
+  contraseñas SQL conocidas ni la clave SMTP expuesta.
+
+No se crearon ventas, pagos ni clientes ficticios en producción. Las pruebas
+funcionales con operaciones se realizaron en desarrollo: 24 pruebas unitarias,
+15 escenarios de integración SQL, TypeScript, lint, compilación y revisión de
+las 17 pantallas en escritorio y móvil.
+
+## Pendientes de operación
+
+1. **CAI vigente:** el propietario todavía no dispone de la autorización.
+   Se conservaron los datos fiscales existentes. Las nuevas ventas y facturas
+   están bloqueadas hasta ingresar un CAI vigente desde administración.
+2. **Correo:** `EMAIL_ENABLED=false`; la clave SMTP expuesta se retiró de Vercel
+   y `.env`. El propietario debe revocarla en Google, generar otra y configurar
+   destinatarios antes de habilitar los envíos.
+3. **Historial e impresión:** conciliar los datos reconstruidos cuando falten
+   precios o vencimientos originales y probar la impresora física de operación.
+
+Las copias antiguas de credenciales permanecen en Git. La rotación SQL invalida
+su contraseña anterior; retirar la clave SMTP del código o del alojamiento no
+la revoca en Google.
