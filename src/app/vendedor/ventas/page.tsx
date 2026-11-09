@@ -28,6 +28,12 @@ interface Producto {
   id_ruta?: number | null
 }
 
+interface GrupoProducto {
+  key: string
+  nombre: string
+  productos: Producto[]
+}
+
 interface Cliente {
   id_cliente: number
   nombre: string
@@ -131,6 +137,8 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
   const [usuarioAutenticado, setUsuarioAutenticado] = useState<UsuarioAutenticado | null>(null)
   const [isInitialLoad, setIsInitialLoad] = useState(true)
   const [terminoBusqueda, setTerminoBusqueda] = useState("")
+  const [terminoBusquedaProducto, setTerminoBusquedaProducto] = useState("")
+  const [gruposProductosAbiertos, setGruposProductosAbiertos] = useState<Record<string, boolean>>({})
   const router = useRouter()
 
   async function fetchRutaUsuario(idPersonal: number) {
@@ -531,6 +539,64 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
 
   const total = calcularTotal()
   const cambio = tipoPago === "efectivo" ? Math.max(0, efectivoRecibido - total) : 0
+  const gruposProductos = Array.from(productosFiltrados.reduce((grupos, producto) => {
+    const nombre = producto.nombre.trim()
+    const key = nombre.toLocaleLowerCase() || `producto-${producto.id_producto}`
+    const grupo = grupos.get(key)
+    if (grupo) grupo.productos.push(producto)
+    else grupos.set(key, { key, nombre: nombre || producto.codigo, productos: [producto] })
+    return grupos
+  }, new Map<string, GrupoProducto>()).values())
+  const busquedaProducto = terminoBusquedaProducto.trim().toLocaleLowerCase()
+  const gruposProductosVisibles = gruposProductos.map(grupo => ({
+    ...grupo,
+    productosVisibles: grupo.productos.filter(producto =>
+      !busquedaProducto || [producto.nombre, producto.codigo, producto.descripcion]
+        .some(valor => String(valor || "").toLocaleLowerCase().includes(busquedaProducto)),
+    ),
+  })).filter(grupo => grupo.productosVisibles.length > 0)
+
+  const renderProductoCard = (producto: Producto) => {
+    const stockDisponible = Math.abs(producto.stock) < 0.01 ? 0 : producto.stock
+    const esSoloCompleto = usaSoloPrecioCompleto(producto)
+    // Para los productos de solo precio completo, nunca se aplica la lógica de precio medio.
+    const esStockMedioProducto = !esSoloCompleto && !clienteSeleccionado?.tipo_cliente.includes("mayorista") && esStockMedio(stockDisponible)
+    const precioMostrar = esSoloCompleto
+      ? producto.precio_completo
+      : clienteSeleccionado?.tipo_cliente.includes("mayorista")
+        ? esStockMedioProducto
+          ? producto.precio_medio
+          : producto.precio_mayorista
+        : esStockMedioProducto
+          ? producto.precio_medio
+          : producto.precio_medio
+    const estaSeleccionado = detallesVenta.some(detalle => detalle.id_producto === producto.id_producto)
+
+    return (
+      <div
+        key={producto.id_producto}
+        className={`border rounded-lg p-4 transition-colors ${estaSeleccionado ? "bg-blue-50 border-blue-300 shadow-md" : "hover:bg-gray-50"}`}
+      >
+        <p className="font-medium">{producto.nombre}</p>
+        <p className="text-sm text-gray-600">{producto.codigo}</p>
+        <p className={`text-sm ${esStockMedioProducto ? "text-orange-600 font-bold" : "text-gray-600"}`}>
+          Stock: {stockDisponible}
+          {esStockMedioProducto && " (Última unidad)"}
+        </p>
+        <p className="text-sm font-medium mt-1">
+          Precio: L. {precioMostrar.toFixed(2)} ({esSoloCompleto ? "Precio Completo" : esStockMedioProducto ? "medio" : clienteSeleccionado?.tipo_cliente.includes("mayorista") ? "mayorista" : "medio"})
+        </p>
+        <Button
+          onClick={() => agregarProducto(producto)}
+          className="mt-2 w-full"
+          disabled={stockDisponible < 0.5}
+          title={stockDisponible < 0.5 ? "No hay stock disponible" : "Agregar al carrito"}
+        >
+          Agregar
+        </Button>
+      </div>
+    )
+  }
 
   if (!usuarioAutenticado) {
     return (
@@ -923,62 +989,61 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
                 </CardTitle>
               </CardHeader>
               <CardContent>
+                <div className="relative mb-4">
+                  <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    aria-label="Buscar producto por nombre o código"
+                    placeholder="Buscar producto por nombre o código..."
+                    className="pl-8"
+                    value={terminoBusquedaProducto}
+                    onChange={event => setTerminoBusquedaProducto(event.target.value)}
+                  />
+                </div>
                 {cargandoProductos ? (
                   <div className="flex justify-center py-4">
                     <Loader2 className="h-6 w-6 animate-spin" />
                   </div>
-                ) : productosFiltrados.length > 0 ? (
+                ) : gruposProductosVisibles.length > 0 ? (
                   <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                    {productosFiltrados.map((producto) => {
-                      const stockDisponible = Math.abs(producto.stock) < 0.01 ? 0 : producto.stock
-                      const esSoloCompleto = usaSoloPrecioCompleto(producto)
-                      // Para los productos de solo precio completo, nunca se aplica la lógica de precio medio.
-                      const esStockMedioProducto = !esSoloCompleto && !clienteSeleccionado?.tipo_cliente.includes("mayorista") && esStockMedio(stockDisponible)
-                      const precioMostrar = esSoloCompleto
-                        ? producto.precio_completo
-                        : clienteSeleccionado?.tipo_cliente.includes("mayorista")
-                          ? esStockMedioProducto
-                            ? producto.precio_medio
-                            : producto.precio_mayorista
-                          : esStockMedioProducto
-                            ? producto.precio_medio
-                            : producto.precio_medio
+                    {gruposProductosVisibles.map(grupo => {
+                      if (grupo.productos.length === 1) return renderProductoCard(grupo.productosVisibles[0])
 
-                      const estaSeleccionado = detallesVenta.some(d => d.id_producto === producto.id_producto)
+                      const abierto = gruposProductosAbiertos[grupo.key] ?? busquedaProducto.length > 0
+                      const seleccionados = grupo.productos.some(producto => detallesVenta.some(detalle => detalle.id_producto === producto.id_producto))
+                      const variantesVisibles = grupo.productosVisibles.length
 
                       return (
-                        <div
-                          key={producto.id_producto}
-                          className={`border rounded-lg p-4 transition-colors ${
-                            estaSeleccionado 
-                              ? 'bg-blue-50 border-blue-300 shadow-md' 
-                              : 'hover:bg-gray-50'
-                          }`}
-                        >
-                          <p className="font-medium">{producto.nombre}</p>
-                          <p className="text-sm text-gray-600">{producto.codigo}</p>
-                          <p className={`text-sm ${esStockMedioProducto ? 'text-orange-600 font-bold' : 'text-gray-600'}`}>
-                            Stock: {stockDisponible}
-                            {esStockMedioProducto && ' (Última unidad)'}
-                          </p>
-                          <p className="text-sm font-medium mt-1">
-                            Precio: L. {precioMostrar.toFixed(2)} ({esSoloCompleto ? 'Precio Completo' : esStockMedioProducto ? 'medio' : clienteSeleccionado?.tipo_cliente.includes("mayorista") ? 'mayorista' : 'medio'})
-                          </p>
-                          <Button
-                            onClick={() => agregarProducto(producto)}
-                            className="mt-2 w-full"
-                            disabled={stockDisponible < 0.5}
-                            title={stockDisponible < 0.5 ? "No hay stock disponible" : "Agregar al carrito"}
-                          >
-                            Agregar
-                          </Button>
+                        <div key={grupo.key} className="sm:col-span-2 lg:col-span-3 rounded-lg border p-4">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <p className="font-semibold">{grupo.nombre}</p>
+                                <Badge variant="secondary">{variantesVisibles === grupo.productos.length ? `${grupo.productos.length} opciones` : `${variantesVisibles} de ${grupo.productos.length} opciones`}</Badge>
+                                {seleccionados && <Badge variant="outline">En el carrito</Badge>}
+                              </div>
+                              <p className="mt-1 text-sm text-gray-600">Códigos e inventarios separados por opción</p>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              aria-expanded={abierto}
+                              onClick={() => setGruposProductosAbiertos(current => ({ ...current, [grupo.key]: !current[grupo.key] }))}
+                            >
+                              {abierto ? "Ocultar opciones" : `Ver ${variantesVisibles} opciones`}
+                            </Button>
+                          </div>
+                          {abierto && (
+                            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                              {grupo.productosVisibles.map(renderProductoCard)}
+                            </div>
+                          )}
                         </div>
                       )
                     })}
                   </div>
                 ) : (
                   <p className="text-gray-500 text-center py-4">
-                    No hay productos disponibles en tu ruta
+                    {busquedaProducto ? "No hay productos que coincidan con la búsqueda" : "No hay productos disponibles en tu ruta"}
                   </p>
                 )}
               </CardContent>
