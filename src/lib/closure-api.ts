@@ -4,7 +4,8 @@ import { audit, transaction, withApi } from "./api"
 import { DomainError, pagination, positiveId, today, validDate } from "./business"
 import { getConnection } from "./db"
 import { requestUser } from "./server-auth"
-import { summarizeLiquidation, type LiquidationDetail } from "./liquidation"
+import { mergeLiquidationDetails, summarizeLiquidation, type LiquidationDetail } from "./liquidation"
+import { LEGACY_LIQUIDATION_SQL } from "./legacy-liquidation"
 
 async function dayTotals(query: sql.Request) {
   const result = await query.query(`
@@ -43,9 +44,14 @@ export const GET = withApi(async request => {
       CASE WHEN COUNT(*)<>COUNT(d.unidades_liquidas) OR COUNT(*)<>COUNT(d.liquidacion_vendedor) OR COUNT(*)<>COUNT(d.liquidacion_empresa) THEN 1 ELSE 0 END requiere_revision
     FROM dbo.Venta v JOIN dbo.Personal p ON v.id_personal=p.id_personal JOIN dbo.Detalle_Venta d ON d.id_venta=v.id_venta
     WHERE v.fecha_negocio=@date AND v.anulada=0 AND (@vendor IS NULL OR v.id_personal=@vendor)
+      AND NOT(d.historico_reconstruido=1 AND d.unidades_liquidas IS NULL AND d.liquidacion_vendedor IS NULL AND d.liquidacion_empresa IS NULL AND p.rol='vendedor')
     GROUP BY v.id_personal,p.nombre,p.apellido,d.id_producto,d.descripcion_snapshot,d.nombre_snapshot,d.tipo_precio,d.precio_unitario
     ORDER BY v.id_personal,descripcion,d.tipo_precio,d.precio_unitario OPTION(RECOMPILE)`)
-  const details = liquidation.recordset.map(row => ({ tipo: "DETALLE", ...row })) as LiquidationDetail[]
+  const historical = await pool.request().input("fechaParam", sql.Date, date).input("idVendedorParam", sql.Int, vendor).query(LEGACY_LIQUIDATION_SQL)
+  const details = mergeLiquidationDetails([
+    ...liquidation.recordset.map(row => ({ tipo: "DETALLE", ...row, recalculado: false })),
+    ...historical.recordset.map(row => ({ tipo: "DETALLE", ...row })),
+  ] as LiquidationDetail[])
   return NextResponse.json({ success: true, data: { cierre: result.recordset[0], cierres: result.recordset, liquidacion: summarizeLiquidation(details) } })
 })
 export const POST = withApi(async request => {

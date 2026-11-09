@@ -11,6 +11,7 @@ export interface LiquidationDetail {
   liquidacion_vendedor: number | null
   liquidacion_empresa: number | null
   requiere_revision: number | boolean
+  recalculado?: number | boolean
 }
 
 export interface LiquidationTotal {
@@ -22,6 +23,7 @@ export interface LiquidationTotal {
   total_liquidacion_vendedor: number | null
   total_liquidacion_empresa: number | null
   requiere_revision: boolean
+  recalculado?: boolean
 }
 
 export type Liquidation = LiquidationDetail | LiquidationTotal
@@ -29,6 +31,24 @@ export type Liquidation = LiquidationDetail | LiquidationTotal
 function sumKnown(values: (number | null | undefined)[]): number | null {
   if (values.some(value => value == null)) return null
   return Number(values.reduce<number>((sum, value) => sum + Number(value), 0).toFixed(4))
+}
+
+export function mergeLiquidationDetails(rows: LiquidationDetail[]): LiquidationDetail[] {
+  const groups = new Map<string, LiquidationDetail[]>()
+  for (const row of rows) {
+    const key = JSON.stringify([row.id_personal, row.id_producto, row.descripcion, row.category, row.precio_unitario])
+    const group = groups.get(key) || []
+    group.push(row); groups.set(key, group)
+  }
+  return [...groups.values()].map(group => ({
+    ...group[0],
+    cantidad_vendida: group.reduce((sum, row) => sum + Number(row.cantidad_vendida), 0),
+    total_unidades: sumKnown(group.map(row => row.total_unidades)),
+    liquidacion_vendedor: sumKnown(group.map(row => row.liquidacion_vendedor)),
+    liquidacion_empresa: sumKnown(group.map(row => row.liquidacion_empresa)),
+    requiere_revision: group.some(row => Boolean(row.requiere_revision)),
+    recalculado: group.some(row => Boolean(row.recalculado)),
+  }))
 }
 
 export function summarizeLiquidation(details: LiquidationDetail[]): Liquidation[] {
@@ -41,6 +61,7 @@ export function summarizeLiquidation(details: LiquidationDetail[]): Liquidation[
       total_liquidacion_vendedor: sumKnown(rows.map(row => row.liquidacion_vendedor)),
       total_liquidacion_empresa: sumKnown(rows.map(row => row.liquidacion_empresa)),
       requiere_revision: rows.some(row => Boolean(row.requiere_revision) || row.total_unidades == null || row.liquidacion_vendedor == null || row.liquidacion_empresa == null),
+      recalculado: rows.some(row => Boolean(row.recalculado)),
     }
   })
   const general: LiquidationTotal = {
@@ -50,6 +71,7 @@ export function summarizeLiquidation(details: LiquidationDetail[]): Liquidation[
     total_liquidacion_vendedor: sumKnown(totals.map(row => row.total_liquidacion_vendedor)),
     total_liquidacion_empresa: sumKnown(totals.map(row => row.total_liquidacion_empresa)),
     requiere_revision: totals.some(row => row.requiere_revision),
+    recalculado: totals.some(row => row.recalculado),
   }
   return [...details, ...totals, general]
 }

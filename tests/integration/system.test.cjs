@@ -236,7 +236,7 @@ test('protección, reglas comerciales y transacciones sobre SQL Server local', a
     assert.equal((await request('/API/reportes/ventas-mensuales?anio=invalid', 'GET', undefined, admin)).status, 400)
     assert.equal((await request('/API/reportes/ventas-mensuales', 'GET', undefined, seller.cookie)).status, 403)
   })
-  await t.test('la liquidación separa precios históricos, muestra cantidades y conserva comisiones pendientes y ceros reales', async () => {
+  await t.test('la liquidación reconstruye históricos como antes y conserva precios, comisiones guardadas y ceros reales', async () => {
     const owner = await actor('liquidation'), customer = await client('normal', owner), wholesale = await client('mayorista', owner)
     const item = await product('G', 20, owner, 20), zero = await product('SIN_TARIFA', 2, owner)
     const historical = await sale(customer, item, { detalles_venta: [{ id_producto: item.id, cantidad: 2, tipo_precio: 'completo' }] }, owner)
@@ -252,9 +252,9 @@ test('protección, reglas comerciales y transacciones sobre SQL Server local', a
     const response = await request(`/API/Cierre-dia?fecha=${rules.today()}&id_vendedor=${owner.person}`, 'GET', undefined, admin)
     assert.equal(response.status, 200, response.error)
     const rows = response.data.liquidacion, details = rows.filter(row => row.tipo === 'DETALLE')
-    const pending = details.find(row => row.id_producto === item.id && row.precio_unitario === 20)
-    assert.equal(pending.cantidad_vendida, 3); assert.equal(pending.total_unidades, null)
-    assert.equal(pending.liquidacion_vendedor, null); assert.equal(pending.liquidacion_empresa, null); assert.equal(pending.requiere_revision, 1)
+    const restored = details.find(row => row.id_producto === item.id && row.precio_unitario === 20)
+    assert.equal(restored.cantidad_vendida, 3); assert.equal(restored.total_unidades, 2.5)
+    assert.equal(restored.liquidacion_vendedor, 5); assert.equal(restored.liquidacion_empresa, 12.25); assert.equal(restored.requiere_revision, false); assert.equal(restored.recalculado, true)
     const complete = details.find(row => row.id_producto === item.id && row.precio_unitario === 25)
     assert.equal(complete.cantidad_vendida, 1); assert.equal(complete.total_unidades, 1); assert.equal(complete.liquidacion_vendedor, 2)
     const bulk = details.find(row => row.id_producto === item.id && row.category === 'mayorista')
@@ -262,9 +262,37 @@ test('protección, reglas comerciales y transacciones sobre SQL Server local', a
     const noCommission = details.find(row => row.id_producto === zero.id)
     assert.equal(noCommission.liquidacion_vendedor, 0); assert.equal(noCommission.liquidacion_empresa, 0)
     const general = rows.find(row => row.tipo === 'TOTAL_GENERAL')
-    assert.equal(general.cantidad_vendida, 6); assert.equal(general.total_unidades_vendedor, null)
-    assert.equal(general.total_liquidacion_vendedor, null); assert.equal(general.total_liquidacion_empresa, null)
+    assert.equal(general.cantidad_vendida, 6); assert.equal(general.total_unidades_vendedor, 6.5)
+    assert.equal(general.total_liquidacion_vendedor, 11); assert.equal(general.total_liquidacion_empresa, 23.974); assert.equal(general.recalculado, true)
+    const untouched = (await query('SELECT unidades_liquidas,liquidacion_vendedor,liquidacion_empresa FROM dbo.Detalle_Venta WHERE id_venta=@id', { id: historical.data.id_venta }))[0]
+    assert.equal(untouched.unidades_liquidas, null); assert.equal(untouched.liquidacion_vendedor, null); assert.equal(untouched.liquidacion_empresa, null)
     assert.ok(rows.filter(row => row.tipo !== 'TOTAL_GENERAL').every(row => row.id_personal === owner.person))
+  })
+  await t.test('el cálculo histórico coincide con la consulta original aportada por el propietario', async () => {
+    const owner = await actor('legacy'), regular = await client('normal', owner), wholesale = await client('mayorista', owner)
+    const vectors = [
+      ['L4', 200, 150, 'mayorista'], ['L4', 200, 154, 'mayorista'], ['L4', 200, 150, 'medio'],
+      ['L3', 160, 110, 'mayorista'], ['L3', 160, 113, 'mayorista'], ['L3', 160, 110, 'completo'],
+      ['G', 40, 38.5, 'mayorista2'], ['G', 20, 18.8, 'mayorista'], ['C', 20, 18.8, 'mayorista'],
+      ['CHF', 20, 12, 'completo'], ['CF', 20, 12, 'completo'], ['ORI', 20, 12, 'completo'],
+      ['MINIORI', 20, 12, 'completo'], ['MEGA', 40, 12, 'completo'], ['CCP', 20, 12, 'completo'], ['L', 40, 12, 'mayorista'],
+    ]
+    for (const [code, full, bulk, priceType] of vectors) {
+      const item = await product(code, 5, owner, full)
+      await query('UPDATE dbo.Producto SET precio_mayorista=@price WHERE id_producto=@id', { id: item.id, price: bulk })
+      const sold = await sale(priceType.startsWith('mayorista') ? wholesale : regular, item, { detalles_venta: [{ id_producto: item.id, cantidad: 2, tipo_precio: priceType }] }, owner)
+      assert.equal(sold.status, 200, sold.error)
+      await query('UPDATE dbo.Detalle_Venta SET historico_reconstruido=1,unidades_liquidas=NULL,liquidacion_vendedor=NULL,liquidacion_empresa=NULL WHERE id_venta=@id', { id: sold.data.id_venta })
+    }
+    assert.equal((await request('/API/Cierre-dia', 'POST', { fecha_cierre: rules.today() }, owner.cookie)).status, 200)
+    const oracleRequest = pool.request().input('fechaParam', sql.Date, rules.today()).input('idVendedorParam', sql.Int, owner.person)
+    const oracle = (await oracleRequest.query(fs.readFileSync(root + '/tests/fixtures/legacy-liquidation.sql', 'utf8'))).recordset.find(row => row.tipo === 'TOTAL_GENERAL')
+    const response = await request(`/API/Cierre-dia?fecha=${rules.today()}&id_vendedor=${owner.person}`, 'GET', undefined, admin)
+    assert.equal(response.status, 200, response.error)
+    const general = response.data.liquidacion.find(row => row.tipo === 'TOTAL_GENERAL')
+    for (const key of ['total_unidades_vendedor', 'total_liquidacion_vendedor', 'total_liquidacion_empresa']) assert.equal(general[key], Number(Number(oracle[key]).toFixed(4)), key)
+    assert.equal(general.cantidad_vendida, (vectors.length - 1) * 2); assert.equal(general.requiere_revision, false)
+    assert.ok(response.data.liquidacion.filter(row => row.tipo === 'DETALLE').every(row => row.recalculado))
   })
   await t.test('cambio obligatorio de contraseña y revocación de sesiones', async () => {
     const user = prefix + 'password', created = await request('/API/Personal', 'POST', { nombre: user, apellido: 'Ficticio', usuario: user, contrasena: pass, rol: 'vendedor', fecha_contratacion: rules.today(), activo: true }, admin)

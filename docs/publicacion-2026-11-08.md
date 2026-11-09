@@ -70,23 +70,15 @@ la revoca en Google.
 
 ## Corrección del detalle de liquidación
 
-Se corrigió la columna de precio unitario para usar el precio guardado con la
-venta y separar filas vendidas a distintos precios. Ahora se muestra también la
-cantidad vendida registrada, independientemente de las unidades de liquidación.
-Los valores faltantes y los totales incompletos aparecen «Por conciliar»; los
-ceros registrados se conservan como cero. Al abrir un cierre desde un filtro de
-varios vendedores, su total general corresponde únicamente a ese vendedor.
+El detalle muestra el precio y la cantidad vendidos, conserva los importes
+guardados para las ventas nuevas y mantiene los valores nulos como pendientes.
+Los cierres históricos cuyos importes no quedaron guardados se vuelven a calcular
+con la fórmula anterior que compartió el propietario. La fórmula clasifica los
+productos por sus reglas históricas y usa los precios actuales del catálogo, como
+lo hacía esa versión. Cada detalle reconstruido lleva la marca «Recalculado».
+La reconstrucción ocurre al consultar el cierre y no escribe sobre ventas ni
+comisiones originales.
 
-El propietario indicó que desconoce si las tarifas históricas eran las mismas.
-Por eso no se recalcularon comisiones antiguas ni se modificaron los cierres o
-ventas de producción. Es necesario confirmar las tarifas originales para
-conciliar esos importes. Las ventas nuevas conservan sus comisiones guardadas.
-
-Validación: 27 pruebas unitarias y 16 escenarios de integración SQL, TypeScript,
-ESLint y compilación aprobados. La tabla se verificó en un navegador aislado con
-datos ficticios en escritorio y móvil, sin errores de página ni desbordamiento
-horizontal del documento. Los archivos de entorno permanecen ignorados.
-La consulta corregida se comprobó también directamente en Azure, solo en lectura,
-con precios y cantidades disponibles y totales desconocidos conservados como
-pendientes. Se optimizó su plan por filtro para evitar el tiempo de espera
-observado en la primera comprobación; la ejecución verificada tardó unos dos segundos.
+Validación: las pruebas de integración comparan la consulta restaurada con una
+copia de la fórmula anterior, incluidas sus reglas de producto y exclusión de la
+categoría «otros». Se verifica también que los valores originales sigan intactos.

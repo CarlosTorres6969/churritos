@@ -126,6 +126,7 @@ const DetallesCierreModal = ({
   }
 
   const requiereRevision = cierre.liquidacion?.some(item => item.requiere_revision)
+  const tieneRecalculados = cierre.liquidacion?.some(item => item.recalculado)
   const formatUnits = (units: number | null | undefined) => units == null ? "Por conciliar" : new Intl.NumberFormat("es-HN", { maximumFractionDigits: 2 }).format(units)
   const detalles = cierre.liquidacion?.filter((item) => item.tipo === "DETALLE") || []
   const totalesVendedor = cierre.liquidacion?.filter((item): item is LiquidationTotal => item.tipo === "TOTAL_VENDEDOR") || []
@@ -205,6 +206,7 @@ const DetallesCierreModal = ({
         {cierre.liquidacion && cierre.liquidacion.length > 0 ? (
           <div className="mb-6">
             <h3 className="font-semibold text-gray-700 mb-4">Liquidación de Ventas</h3>
+            {tieneRecalculados && <p className="mb-4 rounded bg-blue-50 p-3 text-blue-900">Los importes históricos marcados como recalculados usan las reglas de la versión anterior.</p>}
             {requiereRevision && <p role="alert" className="mb-4 rounded bg-amber-50 p-3 text-amber-900">Hay unidades de liquidación o comisiones históricas sin registrar. Se muestran las cantidades vendidas y los precios disponibles; los totales pendientes quedan por conciliar.</p>}
 
             {detalles.length > 0 && (
@@ -227,7 +229,7 @@ const DetallesCierreModal = ({
                     {detalles.map((item, index) => (
                       <TableRow key={index}>
                         <TableCell>{item.nombre_vendedor}</TableCell>
-                        <TableCell>{item.descripcion || "-"}</TableCell>
+                        <TableCell>{item.descripcion || "-"}{Boolean(item.recalculado) && <Badge variant="secondary" className="ml-2">Recalculado</Badge>}</TableCell>
                         <TableCell>
                           <Badge variant="outline">{item.category || "-"}</Badge>
                         </TableCell>
