@@ -1,8 +1,9 @@
 # Auditoría y parches
 
-Aplicación de ventas con datos reales en producción. Los cambios de este trabajo
-se aplicaron y probaron únicamente en `ChurritosDev`, con datos ficticios.
-No se desplegó la aplicación ni se migró la base real.
+Aplicación de ventas con datos reales en producción. Los cambios se probaron en
+`ChurritosDev`, con datos ficticios, y se publicaron en Azure/Vercel el 8 de
+noviembre de 2026. Véase [el registro de publicación](publicacion-2026-11-08.md)
+para las comprobaciones realizadas y los pendientes de CAI y correo.
 
 ## Reglas de negocio confirmadas
 
@@ -72,7 +73,8 @@ pasaron con el paquete compilado ejecutado mediante `next start` contra
 `ChurritosDev`, con el correo deshabilitado. No se conectó esa ejecución de prueba
 a la base real. La comprobación de credenciales no encontró valores expuestos
 en los archivos actuales ni en los archivos públicos compilados; el historial
-anterior de Git continúa requiriendo rotación de los secretos afectados.
+anterior de Git conserva las copias expuestas. La clave SQL se rotó durante la
+publicación; la clave SMTP debe revocarse en Google y el correo sigue apagado.
 
 La compatibilidad añadida para el túnel de VS Code se validó con 18 pruebas
 unitarias, TypeScript y lint, además de comprobar por el enlace HTTPS real el
@@ -117,14 +119,15 @@ impresión física ni una inspección visual en navegador.
 
 ## Límites y pendientes de operación
 
-1. **Rotar las credenciales de SQL y correo que estuvieron expuestas.** Quitarlas
-   del código y usar `.env` no invalida las anteriores ni las borra del historial
-   de Git. Actualizar el alojamiento y revocar las antiguas es un paso externo.
-2. Aplicar el procedimiento de [despliegue](despliegue.md) con respaldo recuperable,
-   revisión de saldos y una ventana de mantenimiento. No ejecutar migraciones
-   directamente con el usuario SQL de la aplicación.
-3. Comprobar en el alojamiento HTTPS, variables, acceso de red a SQL, copias y
-   alertas. No se revisaron sus registros, firewall ni políticas de restauración.
+1. **Ingresar un CAI vigente.** Producción no dispone de autorización vigente;
+   las nuevas ventas y facturas quedan bloqueadas hasta configurarla.
+2. **Revocar en Google la clave SMTP expuesta** y configurar una nueva junto con
+   los destinatarios antes de habilitar correo. La clave SQL ya se rotó y se
+   comprobó el rechazo de la anterior; las copias en Git no se borraron.
+3. HTTPS, conexión SQL, variables y respaldos retenidos se comprobaron al publicar.
+   No se ejecutó una restauración ni una revisión de todas las reglas de firewall
+   o alertas del alojamiento. Mantener el procedimiento de [despliegue](despliegue.md)
+   para futuras migraciones, con una cuenta distinta de la de ejecución.
 4. Conciliar el historial cuando falten precios, comisiones o vencimientos
    originales. Las filas reconstruidas se identifican y sus liquidaciones
    desconocidas no se presentan como importes ciertos.

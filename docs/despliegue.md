@@ -1,7 +1,10 @@
 # Aplicar los parches en producción
 
-Este procedimiento está preparado para revisión. **No se ha ejecutado en la base
-real.** La base y los usuarios de desarrollo no deben utilizarse en producción.
+Las migraciones 001–005 se aplicaron en la base real durante mantenimiento el
+8 de noviembre de 2026. El resultado y los pendientes están en
+[el registro de publicación](publicacion-2026-11-08.md). Este procedimiento se
+conserva para futuras publicaciones. La base y los usuarios de desarrollo no
+deben utilizarse en producción.
 
 ## Preparar y revisar
 
@@ -34,6 +37,12 @@ contraseñas. Si hay duplicados, referencias rotas, saldos incompatibles, rangos
 CAI o valores inválidos, corregirlos con el responsable de operación antes de
 continuar. Las contraseñas vacías o mayores a 128 caracteres requieren un reinicio
 administrativo previo. No se truncan silenciosamente.
+
+Los lotes tienen un límite predeterminado de 15 minutos para admitir el límite de
+escritura de Azure Basic. `MIGRATION_REQUEST_TIMEOUT_MS`, en el archivo privado de
+migración, permite ajustarlo entre 1.000 y 1.800.000 ms. El ejecutor utiliza la
+opción `requestTimeout` del controlador y registra el archivo y lote completados.
+Ante un error SQL solo muestra códigos y líneas, sin consultas ni datos privados.
 
 ## Qué ocurre con los datos anteriores
 

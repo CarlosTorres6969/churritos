@@ -47,7 +47,7 @@ compartir es el de la aplicación (`3100`); la base de datos permanece local.
 
 Las plantillas `.env.example` y `.env.development.example` contienen únicamente ejemplos. Conserva tus archivos locales existentes. Los `.env*` reales están ignorados por Git; las variables SQL y de correo nunca deben llevar `NEXT_PUBLIC_`.
 
-En producción, `DB_CONNECTION_STRING` tiene prioridad sobre `DB_SERVER`, `DB_PORT`, `DB_NAME`, `DB_USER` y `DB_PASSWORD`. Usa cifrado con `Encrypt=true;TrustServerCertificate=false;`. Configura las variables en el alojamiento y reinicia o despliega después de cambiarlas. `APP_URL` define el origen exacto permitido. Los correos requieren habilitación explícita, credenciales y `EMAIL_RECIPIENTS`.
+En producción, `DB_CONNECTION_STRING` tiene prioridad sobre `DB_SERVER`, `DB_PORT`, `DB_NAME`, `DB_USER` y `DB_PASSWORD`. Usa cifrado con `Encrypt=true;TrustServerCertificate=false;`. Configura las variables en el alojamiento y reinicia o despliega después de cambiarlas. `APP_URL` fija el origen exacto permitido; si no se configura, las escrituras exigen el mismo origen de la solicitud. Los correos requieren habilitación explícita, credenciales y `EMAIL_RECIPIENTS`.
 
 En este proyecto, **Azure SQL es producción**. Su conexión se conserva en `.env`
 o en las variables privadas del alojamiento. Desarrollo utiliza exclusivamente
@@ -56,13 +56,14 @@ pruebas `ChurritosDev`.
 
 Cuando la auditoría habla de «claves expuestas» se refiere a contraseñas que antes
 estaban escritas en archivos de código y siguen apareciendo en versiones de Git.
-La contraseña de Azure configurada localmente coincide con una de esas copias.
-«Antiguas» describe esas copias anteriores; no significa que la contraseña actual
-sea incorrecta, que Azure sea de pruebas o que se haya sustituido automáticamente.
-Pasarla al `.env` protege el código actual, pero no invalida las copias existentes.
-La rotación consiste en sustituirla en Azure y actualizar el acceso de la aplicación
-de forma coordinada. Esta limpieza conserva los `.env` y no cambia contraseñas ni
-datos de producción.
+Durante la publicación del 8 de noviembre se cambió la contraseña SQL expuesta
+y se comprobó que la anterior ya no autentica. Vercel y `.env` usan una cuenta
+nueva de ejecución sin `db_owner`, en la misma base Azure de producción. El acceso
+administrativo nuevo se conserva localmente en `.env.operator.production.local`,
+ignorado por Git y excluido de despliegues; no debe usarse como cuenta de la aplicación.
+La clave SMTP expuesta se retiró de Vercel y `.env`. Todavía debe revocarse en
+Google y configurarse una nueva antes de habilitar el correo. Las copias antiguas
+permanecen en el historial de Git.
 
 `.env.development.local` se carga solo en desarrollo. `npm run build` y `npm start` usan el entorno de producción; no iniciar esa modalidad contra la base real antes de aplicar el procedimiento de despliegue.
 
@@ -94,5 +95,9 @@ Las pruebas de integración exigen servidor local, la base `ChurritosDev` y su m
 - [Revisión completa y correcciones del 8 de noviembre de 2026](docs/revision-2026-11-08.md).
 - [Auditoría, reglas confirmadas y alcance verificado](docs/auditoria.md).
 - [Migración, respaldo, rotación de credenciales y despliegue](docs/despliegue.md).
+- [Publicación en producción del 8 de noviembre de 2026](docs/publicacion-2026-11-08.md).
 
-Los parches están probados en desarrollo. Producción requiere un despliegue coordinado y rotar las credenciales que estuvieron expuestas, aunque ya no aparezcan en el código.
+La versión está publicada en https://invesionesmj-red.vercel.app con las cinco
+migraciones aplicadas en Azure. El primer ingreso exige cambiar la contraseña.
+Falta ingresar un CAI vigente para emitir nuevas ventas y facturas; no se creó
+una autorización fiscal ficticia. El correo permanece deshabilitado.
