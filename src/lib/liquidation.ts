@@ -36,7 +36,12 @@ function sumKnown(values: (number | null | undefined)[]): number | null {
 export function mergeLiquidationDetails(rows: LiquidationDetail[]): LiquidationDetail[] {
   const groups = new Map<string, LiquidationDetail[]>()
   for (const row of rows) {
-    const key = JSON.stringify([row.id_personal, row.id_producto, row.descripcion, row.category, row.precio_unitario])
+    const key = JSON.stringify([
+      row.id_personal,
+      row.descripcion?.trim().toLocaleLowerCase() ?? null,
+      row.category?.trim().toLocaleLowerCase() ?? null,
+      row.precio_unitario,
+    ])
     const group = groups.get(key) || []
     group.push(row); groups.set(key, group)
   }
