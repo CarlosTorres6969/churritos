@@ -67,3 +67,26 @@ las 17 pantallas en escritorio y móvil.
 Las copias antiguas de credenciales permanecen en Git. La rotación SQL invalida
 su contraseña anterior; retirar la clave SMTP del código o del alojamiento no
 la revoca en Google.
+
+## Corrección del detalle de liquidación
+
+Se corrigió la columna de precio unitario para usar el precio guardado con la
+venta y separar filas vendidas a distintos precios. Ahora se muestra también la
+cantidad vendida registrada, independientemente de las unidades de liquidación.
+Los valores faltantes y los totales incompletos aparecen «Por conciliar»; los
+ceros registrados se conservan como cero. Al abrir un cierre desde un filtro de
+varios vendedores, su total general corresponde únicamente a ese vendedor.
+
+El propietario indicó que desconoce si las tarifas históricas eran las mismas.
+Por eso no se recalcularon comisiones antiguas ni se modificaron los cierres o
+ventas de producción. Es necesario confirmar las tarifas originales para
+conciliar esos importes. Las ventas nuevas conservan sus comisiones guardadas.
+
+Validación: 27 pruebas unitarias y 16 escenarios de integración SQL, TypeScript,
+ESLint y compilación aprobados. La tabla se verificó en un navegador aislado con
+datos ficticios en escritorio y móvil, sin errores de página ni desbordamiento
+horizontal del documento. Los archivos de entorno permanecen ignorados.
+La consulta corregida se comprobó también directamente en Azure, solo en lectura,
+con precios y cantidades disponibles y totales desconocidos conservados como
+pendientes. Se optimizó su plan por filtro para evitar el tiempo de espera
+observado en la primera comprobación; la ejecución verificada tardó unos dos segundos.

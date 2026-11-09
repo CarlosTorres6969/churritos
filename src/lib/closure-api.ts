@@ -4,6 +4,7 @@ import { audit, transaction, withApi } from "./api"
 import { DomainError, pagination, positiveId, today, validDate } from "./business"
 import { getConnection } from "./db"
 import { requestUser } from "./server-auth"
+import { summarizeLiquidation, type LiquidationDetail } from "./liquidation"
 
 async function dayTotals(query: sql.Request) {
   const result = await query.query(`
@@ -33,21 +34,19 @@ export const GET = withApi(async request => {
   if (!date) { const total = result.recordset[0]?.total_count || 0; return NextResponse.json({ success: true, data: { cierres: result.recordset, pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) } } }) }
   if (!result.recordset.length) return NextResponse.json({ success: true, data: { cierre: null, cierres: [], liquidacion: [] } })
   const liquidation = await pool.request().input("date", sql.Date, date).input("vendor", sql.Int, vendor).query(`
-    SELECT v.id_personal,p.nombre+' '+p.apellido nombre_vendedor,d.descripcion_snapshot descripcion,d.tipo_precio category,
-      SUM(d.unidades_liquidas) total_unidades,CASE WHEN MAX(CONVERT(int,d.historico_reconstruido))=1 THEN NULL ELSE SUM(d.liquidacion_vendedor) END liquidacion_vendedor,
-      CASE WHEN MAX(CONVERT(int,d.historico_reconstruido))=1 THEN NULL ELSE SUM(d.liquidacion_empresa) END liquidacion_empresa,
-      MAX(CONVERT(int,d.historico_reconstruido)) requiere_revision
+    SELECT v.id_personal,p.nombre+' '+p.apellido nombre_vendedor,d.id_producto,
+      COALESCE(NULLIF(d.descripcion_snapshot,''),d.nombre_snapshot) descripcion,d.tipo_precio category,d.precio_unitario,
+      SUM(CONVERT(decimal(18,2),d.cantidad)) cantidad_vendida,
+      CASE WHEN COUNT(*)<>COUNT(d.unidades_liquidas) THEN NULL ELSE SUM(d.unidades_liquidas) END total_unidades,
+      CASE WHEN COUNT(*)<>COUNT(d.liquidacion_vendedor) THEN NULL ELSE SUM(d.liquidacion_vendedor) END liquidacion_vendedor,
+      CASE WHEN COUNT(*)<>COUNT(d.liquidacion_empresa) THEN NULL ELSE SUM(d.liquidacion_empresa) END liquidacion_empresa,
+      CASE WHEN COUNT(*)<>COUNT(d.unidades_liquidas) OR COUNT(*)<>COUNT(d.liquidacion_vendedor) OR COUNT(*)<>COUNT(d.liquidacion_empresa) THEN 1 ELSE 0 END requiere_revision
     FROM dbo.Venta v JOIN dbo.Personal p ON v.id_personal=p.id_personal JOIN dbo.Detalle_Venta d ON d.id_venta=v.id_venta
     WHERE v.fecha_negocio=@date AND v.anulada=0 AND (@vendor IS NULL OR v.id_personal=@vendor)
-    GROUP BY v.id_personal,p.nombre,p.apellido,d.descripcion_snapshot,d.tipo_precio ORDER BY v.id_personal,d.descripcion_snapshot`)
-  const details = liquidation.recordset.map(row => ({ tipo: "DETALLE", ...row }))
-  const totals = [...new Set(details.map(row => row.id_personal))].map(id => {
-    const items = details.filter(row => row.id_personal === id), uncertain = items.some(row => row.requiere_revision)
-    return { tipo: "TOTAL_VENDEDOR", id_personal: id, nombre_vendedor: items[0].nombre_vendedor, total_unidades_vendedor: items.reduce((sum, row) => sum + Number(row.total_unidades || 0), 0), total_liquidacion_vendedor: uncertain ? null : items.reduce((sum, row) => sum + Number(row.liquidacion_vendedor), 0), total_liquidacion_empresa: uncertain ? null : items.reduce((sum, row) => sum + Number(row.liquidacion_empresa), 0), requiere_revision: uncertain }
-  })
-  const uncertain = totals.some(row => row.requiere_revision)
-  const general = { tipo: "TOTAL_GENERAL", total_unidades_vendedor: totals.reduce((sum, row) => sum + row.total_unidades_vendedor, 0), total_liquidacion_vendedor: uncertain ? null : totals.reduce((sum, row) => sum + Number(row.total_liquidacion_vendedor), 0), total_liquidacion_empresa: uncertain ? null : totals.reduce((sum, row) => sum + Number(row.total_liquidacion_empresa), 0), requiere_revision: uncertain }
-  return NextResponse.json({ success: true, data: { cierre: result.recordset[0], cierres: result.recordset, liquidacion: [...details, ...totals, general] } })
+    GROUP BY v.id_personal,p.nombre,p.apellido,d.id_producto,d.descripcion_snapshot,d.nombre_snapshot,d.tipo_precio,d.precio_unitario
+    ORDER BY v.id_personal,descripcion,d.tipo_precio,d.precio_unitario OPTION(RECOMPILE)`)
+  const details = liquidation.recordset.map(row => ({ tipo: "DETALLE", ...row })) as LiquidationDetail[]
+  return NextResponse.json({ success: true, data: { cierre: result.recordset[0], cierres: result.recordset, liquidacion: summarizeLiquidation(details) } })
 })
 export const POST = withApi(async request => {
   const user = requestUser(request), body = await request.json(), date = validDate(body.fecha_cierre)

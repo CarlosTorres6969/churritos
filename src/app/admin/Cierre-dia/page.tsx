@@ -1,6 +1,7 @@
 "use client"
 import { csvCell } from "@/lib/business"
 import { requireAuth } from "@/lib/auth"
+import { liquidationForVendor, type Liquidation, type LiquidationTotal } from "@/lib/liquidation"
 
 import type React from "react"
 import { useState, useEffect, useCallback } from "react"
@@ -26,21 +27,6 @@ import {
   Calendar,
 } from "lucide-react"
 
-interface Liquidacion {
-  tipo: "DETALLE" | "TOTAL_VENDEDOR" | "TOTAL_GENERAL"
-  id_personal: number | null
-  nombre_vendedor: string
-  descripcion: string | null
-  category: string | null
-  precio_mayorista: number | null
-  total_unidades: number | null
-  liquidacion_vendedor: number | null
-  liquidacion_empresa: number | null
-  total_unidades_vendedor: number | null
-  total_liquidacion_vendedor: number | null
-  total_liquidacion_empresa: number | null
-}
-
 interface CierreDia {
   id_cierre: number
   fecha_cierre: string
@@ -58,7 +44,7 @@ interface CierreDia {
   cobros_credito?: number
   total_efectivo_caja?: number
   cerrado: boolean
-  liquidacion?: Liquidacion[]
+  liquidacion?: Liquidation[]
 }
 
 interface Personal {
@@ -128,7 +114,7 @@ const DetallesCierreModal = ({
   if (!isOpen || !cierre) return null
 
   const formatCurrency = (amount: number | null) => {
-    if (amount === null || amount === undefined) return "-"
+    if (amount === null || amount === undefined) return "Por conciliar"
     return new Intl.NumberFormat("es-HN", {
       style: "currency",
       currency: "HNL",
@@ -139,10 +125,11 @@ const DetallesCierreModal = ({
     return new Date(dateString.slice(0,10) + "T12:00:00Z").toLocaleDateString("es-HN", { timeZone: "America/Tegucigalpa" })
   }
 
-  const requiereRevision=cierre.liquidacion?.some(item=>item.liquidacion_vendedor===null&&item.tipo==="DETALLE")
+  const requiereRevision = cierre.liquidacion?.some(item => item.requiere_revision)
+  const formatUnits = (units: number | null | undefined) => units == null ? "Por conciliar" : new Intl.NumberFormat("es-HN", { maximumFractionDigits: 2 }).format(units)
   const detalles = cierre.liquidacion?.filter((item) => item.tipo === "DETALLE") || []
-  const totalesVendedor = cierre.liquidacion?.filter((item) => item.tipo === "TOTAL_VENDEDOR") || []
-  const totalGeneral = cierre.liquidacion?.find((item) => item.tipo === "TOTAL_GENERAL")
+  const totalesVendedor = cierre.liquidacion?.filter((item): item is LiquidationTotal => item.tipo === "TOTAL_VENDEDOR") || []
+  const totalGeneral = cierre.liquidacion?.find((item): item is LiquidationTotal => item.tipo === "TOTAL_GENERAL")
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -154,7 +141,6 @@ const DetallesCierreModal = ({
           </button>
         </div>
 
-        {requiereRevision && <p role="alert" className="mb-4 rounded bg-amber-50 p-3 text-amber-900">La liquidación histórica requiere conciliación: no se conocen los precios y comisiones originales.</p>}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div className="space-y-2">
             <h3 className="font-semibold text-gray-700">Información General</h3>
@@ -219,6 +205,7 @@ const DetallesCierreModal = ({
         {cierre.liquidacion && cierre.liquidacion.length > 0 ? (
           <div className="mb-6">
             <h3 className="font-semibold text-gray-700 mb-4">Liquidación de Ventas</h3>
+            {requiereRevision && <p role="alert" className="mb-4 rounded bg-amber-50 p-3 text-amber-900">Hay unidades de liquidación o comisiones históricas sin registrar. Se muestran las cantidades vendidas y los precios disponibles; los totales pendientes quedan por conciliar.</p>}
 
             {detalles.length > 0 && (
               <div className="mb-6">
@@ -229,8 +216,9 @@ const DetallesCierreModal = ({
                       <TableHead>Vendedor</TableHead>
                       <TableHead>Producto</TableHead>
                       <TableHead>Tipo Precio</TableHead>
-                      <TableHead className="text-right">Precio Mayorista</TableHead>
-                      <TableHead className="text-right">Unidades</TableHead>
+                      <TableHead className="text-right">Precio unitario</TableHead>
+                      <TableHead className="text-right">Cantidad vendida</TableHead>
+                      <TableHead className="text-right">Unidades de liquidación</TableHead>
                       <TableHead className="text-right">Liquidación Vendedor</TableHead>
                       <TableHead className="text-right">Liquidación Empresa</TableHead>
                     </TableRow>
@@ -244,14 +232,15 @@ const DetallesCierreModal = ({
                           <Badge variant="outline">{item.category || "-"}</Badge>
                         </TableCell>
                         <TableCell className="text-right">
-                          {item.precio_mayorista ? formatCurrency(item.precio_mayorista) : "-"}
+                          {formatCurrency(item.precio_unitario)}
                         </TableCell>
-                        <TableCell className="text-right">{item.total_unidades || "-"}</TableCell>
+                        <TableCell className="text-right">{formatUnits(item.cantidad_vendida)}</TableCell>
+                        <TableCell className="text-right">{formatUnits(item.total_unidades)}</TableCell>
                         <TableCell className="text-right">
-                          {item.liquidacion_vendedor ? formatCurrency(item.liquidacion_vendedor) : "-"}
+                          {formatCurrency(item.liquidacion_vendedor)}
                         </TableCell>
                         <TableCell className="text-right">
-                          {item.liquidacion_empresa ? formatCurrency(item.liquidacion_empresa) : "-"}
+                          {formatCurrency(item.liquidacion_empresa)}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -267,7 +256,8 @@ const DetallesCierreModal = ({
                   <TableHeader>
                     <TableRow>
                       <TableHead>Vendedor</TableHead>
-                      <TableHead className="text-right">Total Unidades</TableHead>
+                      <TableHead className="text-right">Cantidad vendida</TableHead>
+                      <TableHead className="text-right">Unidades de liquidación</TableHead>
                       <TableHead className="text-right">Total Liquidación Vendedor</TableHead>
                       <TableHead className="text-right">Total Liquidación Empresa</TableHead>
                     </TableRow>
@@ -276,12 +266,13 @@ const DetallesCierreModal = ({
                     {totalesVendedor.map((item, index) => (
                       <TableRow key={index} className="font-semibold bg-gray-50">
                         <TableCell>{item.nombre_vendedor}</TableCell>
-                        <TableCell className="text-right">{item.total_unidades_vendedor || "-"}</TableCell>
+                        <TableCell className="text-right">{formatUnits(item.cantidad_vendida)}</TableCell>
+                        <TableCell className="text-right">{formatUnits(item.total_unidades_vendedor)}</TableCell>
                         <TableCell className="text-right">
-                          {item.total_liquidacion_vendedor ? formatCurrency(item.total_liquidacion_vendedor) : "-"}
+                          {formatCurrency(item.total_liquidacion_vendedor)}
                         </TableCell>
                         <TableCell className="text-right">
-                          {item.total_liquidacion_empresa ? formatCurrency(item.total_liquidacion_empresa) : "-"}
+                          {formatCurrency(item.total_liquidacion_empresa)}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -294,20 +285,24 @@ const DetallesCierreModal = ({
               <div className="mb-6">
                 <h4 className="font-medium text-gray-600 mb-2">Total General</h4>
                 <div className="bg-blue-50 p-4 rounded-lg">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
                     <div className="text-center">
-                      <p className="text-sm text-gray-600">Total Unidades</p>
-                      <p className="text-lg font-bold">{totalGeneral.total_unidades_vendedor || 0}</p>
+                      <p className="text-sm text-gray-600">Cantidad vendida</p>
+                      <p className="text-lg font-bold">{formatUnits(totalGeneral.cantidad_vendida)}</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-sm text-gray-600">Unidades de liquidación</p>
+                      <p className="text-lg font-bold">{formatUnits(totalGeneral.total_unidades_vendedor)}</p>
                     </div>
                     <div className="text-center">
                       <p className="text-sm text-gray-600">Total Liquidación Vendedores</p>
-                      <p className="text-lg font-bold text-green-600">
+                      <p className={`text-lg font-bold ${totalGeneral.total_liquidacion_vendedor == null ? "text-amber-800" : "text-green-600"}`}>
                         {formatCurrency(totalGeneral.total_liquidacion_vendedor ?? null)}
                       </p>
                     </div>
                     <div className="text-center">
                       <p className="text-sm text-gray-600">Total Liquidación Empresa</p>
-                      <p className="text-lg font-bold text-blue-600">
+                      <p className={`text-lg font-bold ${totalGeneral.total_liquidacion_empresa == null ? "text-amber-800" : "text-blue-600"}`}>
                         {formatCurrency(totalGeneral.total_liquidacion_empresa ?? null)}
                       </p>
                     </div>
@@ -371,7 +366,7 @@ export default function CierresPage() {
           const cierresArray = data.data.cierres || (data.data.cierre ? [data.data.cierre] : [])
           const cierresConLiquidacion = cierresArray.map((cierre: CierreDia) => ({
             ...cierre,
-            liquidacion: (data.data.liquidacion || []).filter((row: Liquidacion) => row.tipo === "TOTAL_GENERAL" || row.id_personal === cierre.id_personal)
+            liquidacion: liquidationForVendor(data.data.liquidacion || [], cierre.id_personal)
           }))
           setCierres(cierresConLiquidacion)
           setTotalPages(1)
