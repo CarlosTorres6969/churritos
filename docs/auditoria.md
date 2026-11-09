@@ -3,7 +3,7 @@
 Aplicación de ventas con datos reales en producción. Los cambios se probaron en
 `ChurritosDev`, con datos ficticios, y se publicaron en Azure/Vercel el 8 de
 noviembre de 2026. Véase [el registro de publicación](publicacion-2026-11-08.md)
-para las comprobaciones realizadas y los pendientes de CAI y correo.
+para las comprobaciones realizadas y los pendientes de CAI y sustitución de la clave de correo.
 
 ## Reglas de negocio confirmadas
 
@@ -74,7 +74,8 @@ pasaron con el paquete compilado ejecutado mediante `next start` contra
 a la base real. La comprobación de credenciales no encontró valores expuestos
 en los archivos actuales ni en los archivos públicos compilados; el historial
 anterior de Git conserva las copias expuestas. La clave SQL se rotó durante la
-publicación; la clave SMTP debe revocarse en Google y el correo sigue apagado.
+publicación. La clave SMTP se reutilizó después por indicación del propietario;
+el correo está habilitado y queda pendiente sustituir esa clave y revocarla en Google.
 
 La compatibilidad añadida para el túnel de VS Code se validó con 18 pruebas
 unitarias, TypeScript y lint, además de comprobar por el enlace HTTPS real el
@@ -121,9 +122,11 @@ impresión física ni una inspección visual en navegador.
 
 1. **Ingresar un CAI vigente.** Producción no dispone de autorización vigente;
    las nuevas ventas y facturas quedan bloqueadas hasta configurarla.
-2. **Revocar en Google la clave SMTP expuesta** y configurar una nueva junto con
-   los destinatarios antes de habilitar correo. La clave SQL ya se rotó y se
-   comprobó el rechazo de la anterior; las copias en Git no se borraron.
+2. **Sustituir y revocar en Google la clave SMTP expuesta.** El propietario pidió
+   reutilizar la configuración anterior: se comprobó la autenticación con Gmail y
+   se habilitaron los dos destinatarios anteriores mediante variables privadas.
+   La clave SQL ya se rotó y se comprobó el rechazo de la anterior; las copias en
+   Git no se borraron.
 3. HTTPS, conexión SQL, variables y respaldos retenidos se comprobaron al publicar.
    No se ejecutó una restauración ni una revisión de todas las reglas de firewall
    o alertas del alojamiento. Mantener el procedimiento de [despliegue](despliegue.md)

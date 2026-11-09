@@ -54,9 +54,13 @@ las 17 pantallas en escritorio y móvil.
 1. **CAI vigente:** el propietario todavía no dispone de la autorización.
    Se conservaron los datos fiscales existentes. Las nuevas ventas y facturas
    están bloqueadas hasta ingresar un CAI vigente desde administración.
-2. **Correo:** `EMAIL_ENABLED=false`; la clave SMTP expuesta se retiró de Vercel
-   y `.env`. El propietario debe revocarla en Google, generar otra y configurar
-   destinatarios antes de habilitar los envíos.
+2. **Clave de correo:** tras la publicación inicial con correo deshabilitado, el
+   propietario pidió reutilizar la configuración anterior. Se verificó la
+   autenticación Gmail sin enviar mensajes y se habilitó producción con
+   `EMAIL_ENABLED=true`, la clave anterior y sus dos destinatarios anteriores,
+   exclusivamente mediante variables privadas. Desarrollo continúa deshabilitado.
+   Queda pendiente sustituir la clave expuesta y revocarla en Google. Los avisos
+   omitidos durante la desactivación no se reenvían automáticamente.
 3. **Historial e impresión:** conciliar los datos reconstruidos cuando falten
    precios o vencimientos originales y probar la impresora física de operación.
 

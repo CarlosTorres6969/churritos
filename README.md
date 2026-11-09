@@ -61,9 +61,11 @@ y se comprobó que la anterior ya no autentica. Vercel y `.env` usan una cuenta
 nueva de ejecución sin `db_owner`, en la misma base Azure de producción. El acceso
 administrativo nuevo se conserva localmente en `.env.operator.production.local`,
 ignorado por Git y excluido de despliegues; no debe usarse como cuenta de la aplicación.
-La clave SMTP expuesta se retiró de Vercel y `.env`. Todavía debe revocarse en
-Google y configurarse una nueva antes de habilitar el correo. Las copias antiguas
-permanecen en el historial de Git.
+La clave SMTP se retiró inicialmente y luego se reutilizó por indicación del
+propietario, tras comprobar la autenticación con Gmail. El correo está habilitado
+para los dos destinatarios de la configuración anterior, mediante variables
+privadas. Esa clave continúa expuesta en el historial de Git; queda pendiente
+su sustitución y revocación en Google.
 
 `.env.development.local` se carga solo en desarrollo. `npm run build` y `npm start` usan el entorno de producción; no iniciar esa modalidad contra la base real antes de aplicar el procedimiento de despliegue.
 
@@ -100,4 +102,5 @@ Las pruebas de integración exigen servidor local, la base `ChurritosDev` y su m
 La versión está publicada en https://invesionesmj-red.vercel.app con las cinco
 migraciones aplicadas en Azure. El primer ingreso exige cambiar la contraseña.
 Falta ingresar un CAI vigente para emitir nuevas ventas y facturas; no se creó
-una autorización fiscal ficticia. El correo permanece deshabilitado.
+una autorización fiscal ficticia. El correo de producción está habilitado para
+avisar sobre nuevos abonos de crédito; desarrollo permanece sin envíos.
