@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { ArrowLeft, Users, Plus, Edit, UserCheck, UserX, Shield } from "lucide-react"
+import { formatBusinessDate, today } from "@/lib/business"
 
 interface Personal {
   id_personal: number
@@ -23,7 +24,7 @@ interface Personal {
   usuario: string
   contrasena?: string
   rol: "vendedor" | "administrador"
-  fecha_contratacion: string
+  fecha_contratacion: string | null
   activo: boolean
 }
 
@@ -41,15 +42,11 @@ export default function GestionPersonal() {
     telefono: "",
     direccion: "",
     email: "",
-    fecha_contratacion: new Date().toISOString().split("T")[0],
+    fecha_contratacion: today(),
   })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const router = useRouter()
-
-  useEffect(() => {
-    cargarPersonal()
-  }, [])
 
   const cargarPersonal = async () => {
     try {
@@ -84,7 +81,7 @@ export default function GestionPersonal() {
         telefono: persona.telefono || "",
         direccion: persona.direccion || "",
         email: persona.email || "",
-        fecha_contratacion: persona.fecha_contratacion.split("T")[0],
+        fecha_contratacion: persona.fecha_contratacion?.slice(0, 10) ?? today(),
       })
     } else {
       setPersonalEditando(null)
@@ -98,7 +95,7 @@ export default function GestionPersonal() {
         telefono: "",
         direccion: "",
         email: "",
-        fecha_contratacion: new Date().toISOString().split("T")[0],
+        fecha_contratacion: today(),
       })
     }
     setModalAbierto(true)
@@ -200,37 +197,18 @@ export default function GestionPersonal() {
     }
   }
 
-  const resetearPassword = async (persona: Personal) => {
-    if (!confirm(`¿Está seguro de resetear la contraseña de ${persona.nombre} ${persona.apellido}?`)) return
-
-    try {
-      // For password reset, we'll update with a default password
-      const updatedPersona = { ...persona, contrasena: "123456" }
-
-      const response = await fetch("/API/Personal", {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(updatedPersona),
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || "Error al resetear contraseña")
-      }
-
-      alert(`Contraseña reseteada para ${persona.nombre} ${persona.apellido}. Nueva contraseña: 123456`)
-    } catch (error: unknown) {
-      setError(error instanceof Error ? error.message : "Error al resetear contraseña")
-      console.error("Error:", error)
-    }
-  }
+  const resetearPassword = (persona: Personal) => { abrirModal(persona) }
 
   const totalPersonal = Personal.length
   const personalActivo = Personal.filter((p) => p.activo).length
   const vendedores = Personal.filter((p) => p.rol === "vendedor").length
   const administradores = Personal.filter((p) => p.rol === "administrador").length
+
+
+  useEffect(() => {
+    cargarPersonal()
+  }, [])
+
 
   if (loading) {
     return (
@@ -346,7 +324,7 @@ export default function GestionPersonal() {
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
                     <span>Fecha Ingreso:</span>
-                    <span>{new Date(persona.fecha_contratacion).toLocaleDateString("es-HN")}</span>
+                    <span>{persona.fecha_contratacion ? formatBusinessDate(persona.fecha_contratacion) : "Sin fecha"}</span>
                   </div>
                   {persona.telefono && (
                     <div className="flex justify-between">

@@ -9,8 +9,11 @@ import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { ArrowLeft, Search, Package, AlertTriangle } from "lucide-react"
 import { requireAuth } from "@/lib/auth"
+import { InventoryHistory } from "@/components/inventory-history"
 
 interface ProductoInventario {
+  id_inventario_ruta?: number
+  inventario_anterior?: number | null
   id_producto: number
   codigo: string
   nombre: string
@@ -49,86 +52,7 @@ export default function InventarioVendedor() {
   const [rutaUsuario, setRutaUsuario] = useState<RutaUsuario | null>(null)
   const router = useRouter()
 
-  const obtenerRutaUsuario = useCallback(async (idPersonal: number) => {
-    try {
-      const response = await fetch('/API/rutas');
-      if (response.ok) {
-        const data = await response.json();
-        
-        if (data.success && data.data && data.data.length > 0) {
-          const rutaDelUsuario = data.data.find((ruta: RutaUsuario) => 
-            ruta.id_personal_asignado === idPersonal && ruta.activa
-          );
-          
-          if (rutaDelUsuario) {
-            setRutaUsuario(rutaDelUsuario);
-            cargarInventario(rutaDelUsuario.id_ruta);
-          } else {
-            const rutaAsignada = data.data.find((ruta: RutaUsuario) => 
-              ruta.id_personal_asignado === idPersonal
-            );
-            
-            if (rutaAsignada) {
-              setRutaUsuario(rutaAsignada);
-              cargarInventario(rutaAsignada.id_ruta);
-            } else {
-              setError("No tienes una ruta asignada. Contacta al administrador.");
-              setLoading(false);
-            }
-          }
-        } else {
-          setError("No hay rutas disponibles en el sistema");
-          setLoading(false);
-        }
-      } else {
-        setError("Error al cargar la información de tu ruta");
-        setLoading(false);
-      }
-    } catch (error) {
-      console.error("Error fetching user route:", error);
-      setError("Error de conexión al cargar la información de tu ruta");
-      setLoading(false);
-    }
-  }, [])
-
-  useEffect(() => {
-    const obtenerUsuario = () => {
-      try {
-        const userData = requireAuth();
-        if (userData.rol !== "vendedor") {
-          router.push("/")
-          return
-        }
-
-        obtenerRutaUsuario(userData.id_personal);
-      } catch (error) {
-        console.error("Error al obtener el usuario autenticado:", error);
-        router.push("/login");
-      }
-    };
-    
-    obtenerUsuario();
-  }, [router, obtenerRutaUsuario])
-
-  const filtrarProductos = useCallback(() => {
-    const productosOrdenados = [...productos].sort((a, b) => a.id_producto - b.id_producto);
-    if (!busqueda) {
-      setProductosFiltrados(productosOrdenados)
-    } else {
-      const filtrados = productosOrdenados.filter(
-        (producto) =>
-          producto.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
-          producto.codigo.toLowerCase().includes(busqueda.toLowerCase()),
-      )
-      setProductosFiltrados(filtrados)
-    }
-  }, [productos, busqueda])
-
-  useEffect(() => {
-    filtrarProductos()
-  }, [filtrarProductos])
-
-  const cargarInventario = async (idRuta: number) => {
+  async function cargarInventario(idRuta: number) {
     try {
       // Obtener inventario de la ruta específica del vendedor
       const response = await fetch(`/API/inventario-ruta?id_ruta=${idRuta}`)
@@ -141,7 +65,9 @@ export default function InventarioVendedor() {
       if (data.success) {
         // Si hay datos de inventario, usarlos
         if (data.data && data.data.length > 0) {
-          const inventarioRuta = data.data.map((item: {id_producto: number, producto_codigo: string, producto_nombre: string, cantidad: number, precio_completo: number, precio_medio: number, precio_mayorista: number, id_ruta: number}) => ({
+          const inventarioRuta = data.data.map((item: {id_inventario_ruta: number, inventario_anterior: number | null, id_producto: number, producto_codigo: string, producto_nombre: string, cantidad: number, precio_completo: number, precio_medio: number, precio_mayorista: number, id_ruta: number}) => ({
+            id_inventario_ruta: item.id_inventario_ruta,
+            inventario_anterior: item.inventario_anterior,
             id_producto: item.id_producto,
             codigo: item.producto_codigo || "",
             nombre: item.producto_nombre || "",
@@ -178,6 +104,63 @@ export default function InventarioVendedor() {
     }
   }
 
+
+  const obtenerRutaUsuario = useCallback(async (idPersonal: number) => {
+    try {
+      const response = await fetch('/API/rutas');
+      if (response.ok) {
+        const data = await response.json();
+
+        if (data.success && data.data && data.data.length > 0) {
+          const rutaDelUsuario = data.data.find((ruta: RutaUsuario) =>
+            ruta.id_personal_asignado === idPersonal && ruta.activa
+          );
+
+          if (rutaDelUsuario) {
+            setRutaUsuario(rutaDelUsuario);
+            cargarInventario(rutaDelUsuario.id_ruta);
+          } else {
+            const rutaAsignada = data.data.find((ruta: RutaUsuario) =>
+              ruta.id_personal_asignado === idPersonal
+            );
+
+            if (rutaAsignada) {
+              setRutaUsuario(rutaAsignada);
+              cargarInventario(rutaAsignada.id_ruta);
+            } else {
+              setError("No tienes una ruta asignada. Contacta al administrador.");
+              setLoading(false);
+            }
+          }
+        } else {
+          setError("No hay rutas disponibles en el sistema");
+          setLoading(false);
+        }
+      } else {
+        setError("Error al cargar la información de tu ruta");
+        setLoading(false);
+      }
+    } catch (error) {
+      console.error("Error fetching user route:", error);
+      setError("Error de conexión al cargar la información de tu ruta");
+      setLoading(false);
+    }
+  }, [])
+
+  const filtrarProductos = useCallback(() => {
+    const productosOrdenados = [...productos].sort((a, b) => a.id_producto - b.id_producto);
+    if (!busqueda) {
+      setProductosFiltrados(productosOrdenados)
+    } else {
+      const filtrados = productosOrdenados.filter(
+        (producto) =>
+          producto.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
+          producto.codigo.toLowerCase().includes(busqueda.toLowerCase()),
+      )
+      setProductosFiltrados(filtrados)
+    }
+  }, [productos, busqueda])
+
   const obtenerEstadoStock = (cantidad: number) => {
     if (cantidad === 0) return { estado: "agotado", color: "destructive" as const }
     if (cantidad <= 5) return { estado: "bajo", color: "secondary" as const }
@@ -187,6 +170,32 @@ export default function InventarioVendedor() {
 
   const productosAgotados = productos.filter((p) => p.cantidad === 0).length
   const productosBajoStock = productos.filter((p) => p.cantidad > 0 && p.cantidad <= 5).length
+
+
+  useEffect(() => {
+    const obtenerUsuario = () => {
+      try {
+        const userData = requireAuth();
+        if (userData.rol !== "vendedor") {
+          router.push("/")
+          return
+        }
+
+        obtenerRutaUsuario(userData.id_personal);
+      } catch (error) {
+        console.error("Error al obtener el usuario autenticado:", error);
+        router.push("/");
+      }
+    };
+
+    obtenerUsuario();
+  }, [router, obtenerRutaUsuario])
+
+
+  useEffect(() => {
+    filtrarProductos()
+  }, [filtrarProductos])
+
 
   if (loading) {
     return (
@@ -308,6 +317,8 @@ export default function InventarioVendedor() {
                 </CardHeader>
 
                 <CardContent className="space-y-3">
+                  <p className="text-sm">Inventario anterior: <strong>{producto.inventario_anterior ?? "Sin registro"}</strong><br/><span className="text-xs text-gray-500">Antes de la última reposición o ajuste.</span></p>
+                  {producto.id_inventario_ruta && <InventoryHistory id={producto.id_inventario_ruta} name={producto.nombre} />}
                   <div className="grid grid-cols-1 gap-2 text-sm">
                     <div className="flex justify-between">
                       <span>Precio Completo:</span>
@@ -346,8 +357,8 @@ export default function InventarioVendedor() {
               <Package className="h-12 w-12 mx-auto text-gray-400 mb-4" />
               <h3 className="text-lg font-medium text-gray-900 mb-2">No se encontraron productos</h3>
               <p className="text-gray-600">
-                {busqueda 
-                  ? "No hay productos que coincidan con tu búsqueda" 
+                {busqueda
+                  ? "No hay productos que coincidan con tu búsqueda"
                   : "No hay productos en tu inventario"}
               </p>
             </CardContent>

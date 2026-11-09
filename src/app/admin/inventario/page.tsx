@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { ArrowLeft, Package, MapPin, Plus, Edit, AlertTriangle } from "lucide-react"
+import { InventoryHistory } from "@/components/inventory-history"
 
 interface InventarioRuta {
   id_inventario_ruta: number
@@ -21,6 +22,8 @@ interface InventarioRuta {
   producto_nombre: string
   cantidad: number
   fecha_actualizacion: string
+  inventario_anterior: number | null
+  inventario_tras_actualizacion: number | null
 }
 
 interface Ruta {
@@ -41,6 +44,8 @@ export default function InventarioPorRutaPage() {
   const [rutaSeleccionada, setRutaSeleccionada] = useState<string>("todas")
   const [modalAbierto, setModalAbierto] = useState(false)
   const [inventarioEditando, setInventarioEditando] = useState<InventarioRuta | null>(null)
+  const [operacion, setOperacion] = useState<"agregar" | "ajustar">("agregar")
+  const [guardando, setGuardando] = useState(false)
   const [formData, setFormData] = useState({
     id_ruta: 0,
     id_producto: 0,
@@ -85,8 +90,8 @@ export default function InventarioPorRutaPage() {
 
   // Validar formato de cantidad (solo enteros o .5)
   const validarCantidad = (valor: string): boolean => {
-    const num = parseFloat(valor);
-    if (isNaN(num) || num < 0) return false;
+    const num = Number(valor);
+    if (!valor.trim() || !Number.isFinite(num) || num < 0) return false;
     
     // Verificar si es entero o tiene .5
     return num % 1 === 0 || num % 1 === 0.5;
@@ -113,7 +118,7 @@ export default function InventarioPorRutaPage() {
       setFormData({
         id_ruta: inventario.id_ruta,
         id_producto: inventario.id_producto,
-        cantidad: inventario.cantidad.toString(),
+        cantidad: "0",
       })
     } else {
       setInventarioEditando(null)
@@ -123,6 +128,7 @@ export default function InventarioPorRutaPage() {
         cantidad: "0",
       })
     }
+    setOperacion("agregar")
     setModalAbierto(true)
     setError("")
   }
@@ -135,6 +141,7 @@ export default function InventarioPorRutaPage() {
 
   // Guardar cambios en el inventario
   const guardarInventario = async () => {
+    if (guardando) return
     try {
       // Validación básica
       if (!validarCantidad(formData.cantidad)) {
@@ -142,7 +149,8 @@ export default function InventarioPorRutaPage() {
         return
       }
 
-      const cantidadDecimal = parseFloat(formData.cantidad);
+      const cantidadDecimal = Number(formData.cantidad);
+      if (operacion === "agregar" && cantidadDecimal <= 0) { setError("Ingrese la cantidad que desea agregar"); return }
 
       if (formData.id_ruta === 0 || formData.id_producto === 0) {
         setError("Debe seleccionar una ruta y un producto")
@@ -150,20 +158,25 @@ export default function InventarioPorRutaPage() {
       }
 
       const endpoint = '/API/inventario-ruta'
-      const method = inventarioEditando ? 'PUT' : 'POST'
+      const target = inventarioObjetivo
+      const method = target ? 'PUT' : 'POST'
 
       // Preparar datos para enviar
-      const requestData = inventarioEditando
+      const requestData = target
         ? {
-            id_inventario_ruta: inventarioEditando.id_inventario_ruta,
+            id_inventario_ruta: target.id_inventario_ruta,
+            cantidad_esperada: Number(target.cantidad),
+            operacion,
             cantidad: cantidadDecimal
           }
         : {
             id_ruta: formData.id_ruta,
             id_producto: formData.id_producto,
+            operacion,
             cantidad: cantidadDecimal
           }
 
+      setGuardando(true); setError("")
       const response = await fetch(endpoint, {
         method,
         headers: {
@@ -179,13 +192,14 @@ export default function InventarioPorRutaPage() {
 
       // Recargar datos
       const inventarioRes = await fetch('/API/inventario-ruta')
+      if (!inventarioRes.ok) throw new Error("Inventario guardado. Recargue la pantalla para ver las existencias actualizadas.")
       const inventarioData = await inventarioRes.json()
       setInventarios(inventarioData.data || [])
 
       cerrarModal()
     } catch (error) {
       setError(error instanceof Error ? error.message : "Error al guardar")
-    }
+    } finally { setGuardando(false) }
   }
 
   // Eliminar registro de inventario
@@ -226,6 +240,9 @@ export default function InventarioPorRutaPage() {
   const formatearCantidad = (cantidad: number) => {
     return cantidad % 1 === 0 ? cantidad.toString() : cantidad.toFixed(1);
   }
+  const inventarioObjetivo = inventarioEditando ?? inventarios.find(item => item.id_ruta === formData.id_ruta && item.id_producto === formData.id_producto)
+  const cantidadAnterior = inventarioObjetivo?.cantidad ?? 0
+  const cantidadResultado = operacion === "agregar" ? cantidadAnterior + Number(formData.cantidad) : Number(formData.cantidad)
 
   if (loading) {
     return (
@@ -240,7 +257,7 @@ export default function InventarioPorRutaPage() {
       {/* Header */}
       <header className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between py-4">
+          <div className="flex flex-wrap items-center justify-between gap-4 py-4">
             <div className="flex items-center space-x-4">
               <Button variant="ghost" onClick={() => router.back()}>
                 <ArrowLeft className="h-4 w-4 mr-2" />
@@ -319,6 +336,9 @@ export default function InventarioPorRutaPage() {
                             </div>
 
                             <div className="space-y-2 text-sm text-gray-600">
+                              <p>Inventario actual: <strong>{formatearCantidad(inventario.cantidad)}</strong></p>
+                              <p>Inventario anterior: <strong>{inventario.inventario_anterior == null ? "Sin registro" : formatearCantidad(inventario.inventario_anterior)}</strong></p>
+                              <p className="text-xs">Antes de la última reposición o ajuste.</p>
                               <div className="flex items-center gap-2">
                                 {stockInfo.estado === "agotado" && <AlertTriangle className="h-4 w-4 text-red-500" />}
                                 {stockInfo.estado === "bajo" && <AlertTriangle className="h-4 w-4 text-yellow-500" />}
@@ -340,7 +360,7 @@ export default function InventarioPorRutaPage() {
                                 className="flex-1"
                               >
                                 <Edit className="h-4 w-4 mr-2" />
-                                Editar
+                                Reponer / ajustar
                               </Button>
                               <Button
                                 variant="outline"
@@ -351,6 +371,7 @@ export default function InventarioPorRutaPage() {
                                 Eliminar
                               </Button>
                             </div>
+                            <div className="mt-2"><InventoryHistory id={inventario.id_inventario_ruta} name={inventario.producto_nombre} /></div>
                           </CardContent>
                         </Card>
                       )
@@ -376,12 +397,12 @@ export default function InventarioPorRutaPage() {
         )}
 
         {/* Modal para agregar/editar inventario */}
-        <Dialog open={modalAbierto} onOpenChange={setModalAbierto}>
+        <Dialog open={modalAbierto} onOpenChange={open => { if (!guardando) setModalAbierto(open) }}>
           <DialogContent className="sm:max-w-[425px]">
             <DialogHeader>
-              <DialogTitle>{inventarioEditando ? "Editar Inventario" : "Agregar Inventario"}</DialogTitle>
+              <DialogTitle>{inventarioEditando ? "Reponer o ajustar inventario" : "Agregar Inventario"}</DialogTitle>
               <DialogDescription>
-                {inventarioEditando ? "Modifica la cantidad del producto" : "Agrega un producto al inventario de ruta"}
+                Agrega existencias o registra la cantidad total contada. Cada cambio conserva el inventario anterior.
               </DialogDescription>
             </DialogHeader>
 
@@ -434,9 +455,10 @@ export default function InventarioPorRutaPage() {
                 </>
               )}
 
+              {inventarioObjetivo && <div className="space-y-2"><Label htmlFor="operacion">Operación</Label><Select value={operacion} onValueChange={(value: "agregar" | "ajustar") => { setOperacion(value); setFormData({ ...formData, cantidad: value === "ajustar" ? String(cantidadAnterior) : "0" }) }}><SelectTrigger id="operacion"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="agregar">Agregar unidades al inventario</SelectItem><SelectItem value="ajustar">Establecer cantidad total contada</SelectItem></SelectContent></Select></div>}
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="cantidad" className="text-right">
-                  Cantidad
+                  {operacion === "agregar" ? "A agregar" : "Total contado"}
                 </Label>
                 <Input
                   id="cantidad"
@@ -449,6 +471,7 @@ export default function InventarioPorRutaPage() {
                   min="0"
                 />
               </div>
+              <p className="rounded-md bg-blue-50 p-3 text-sm">Inventario anterior: <strong>{cantidadAnterior}</strong><br/>Inventario resultante: <strong>{Number.isFinite(cantidadResultado) ? cantidadResultado : "—"}</strong></p>
             </div>
 
             {error && (
@@ -458,10 +481,10 @@ export default function InventarioPorRutaPage() {
             )}
 
             <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={cerrarModal}>
+              <Button variant="outline" disabled={guardando} onClick={cerrarModal}>
                 Cancelar
               </Button>
-              <Button onClick={guardarInventario}>{inventarioEditando ? "Actualizar" : "Agregar"}</Button>
+              <Button disabled={guardando} onClick={guardarInventario}>{guardando ? "Guardando…" : operacion === "agregar" ? "Agregar existencias" : "Guardar ajuste"}</Button>
             </div>
           </DialogContent>
         </Dialog>

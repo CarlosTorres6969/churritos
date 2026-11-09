@@ -31,25 +31,25 @@ interface APIResponse<T> {
 
 export default function GestionRutas() {
   const [rutas, setRutas] = useState<Ruta[]>([])
+  const [personal,setPersonal]=useState<{id_personal:number;nombre:string;apellido:string}[]>([])
   const [modalAbierto, setModalAbierto] = useState(false)
   const [rutaEditando, setRutaEditando] = useState<Ruta | null>(null)
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{nombre:string;descripcion:string;activa:boolean;id_personal_asignado:number|null}>({
     nombre: "",
     descripcion: "",
     activa: true,
+    id_personal_asignado: null,
   })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const router = useRouter()
 
-  useEffect(() => {
-    cargarRutas()
-  }, [])
-
   const cargarRutas = async () => {
     try {
       setLoading(true)
-      const response = await fetch("/API/rutas?inactivas=true")
+      const [response,peopleResponse]=await Promise.all([fetch("/API/rutas?inactivas=true"),fetch("/API/Personal")])
+      const people=await peopleResponse.json()
+      if(Array.isArray(people))setPersonal(people.filter(p=>p.activo&&p.rol==="vendedor"))
       const result: APIResponse<Ruta[]> = await response.json()
 
       if (result.success && result.data) {
@@ -57,7 +57,7 @@ export default function GestionRutas() {
         const rutasConDefaults = result.data.map((ruta) => ({
           ...ruta,
           clientes_asignados: ruta.clientes_asignados || 0,
-          vendedor_asignado: ruta.id_personal_asignado ? `Personal ${ruta.id_personal_asignado}` : undefined,
+          vendedor_asignado: ruta.vendedor_asignado || undefined,
         }))
         setRutas(rutasConDefaults)
         setError("")
@@ -79,6 +79,7 @@ export default function GestionRutas() {
         nombre: ruta.nombre,
         descripcion: ruta.descripcion || "",
         activa: ruta.activa !== false,
+        id_personal_asignado:ruta.id_personal_asignado??null,
       })
     } else {
       setRutaEditando(null)
@@ -86,6 +87,7 @@ export default function GestionRutas() {
         nombre: "",
         descripcion: "",
         activa: true,
+    id_personal_asignado: null,
       })
     }
     setModalAbierto(true)
@@ -201,6 +203,12 @@ export default function GestionRutas() {
   const rutasActivas = rutas.filter((r) => r.activa).length
   const totalClientes = rutas.reduce((sum, r) => sum + (r.clientes_asignados || 0), 0)
   const rutasConVendedor = rutas.filter((r) => r.vendedor_asignado).length
+
+
+  useEffect(() => {
+    cargarRutas()
+  }, [])
+
 
   if (loading) {
     return (
@@ -402,6 +410,7 @@ export default function GestionRutas() {
                 />
               </div>
 
+              <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="vendedor-ruta">Vendedor</Label><select id="vendedor-ruta" className="col-span-3 border rounded-md p-2" value={formData.id_personal_asignado??""} onChange={e=>setFormData({...formData,id_personal_asignado:e.target.value?Number(e.target.value):null})}><option value="">Sin vendedor</option>{personal.map(persona=><option key={persona.id_personal} value={persona.id_personal}>{persona.nombre} {persona.apellido}</option>)}</select></div>
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="activa" className="text-right">
                   Estado

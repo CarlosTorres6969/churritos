@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react"
 import { useRouter } from "next/navigation"
+import { today, TIME_ZONE } from "@/lib/business"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -21,7 +22,6 @@ import {
   ChevronLeft,
   ChevronRight,
 } from "lucide-react"
-import { format } from "date-fns"
 import { getLoggedUser, requireAuth } from "@/lib/auth"
 
 interface ResumenVenta {
@@ -40,6 +40,7 @@ interface ResumenDia {
   ventasEfectivo: number
   ventasCredito: number
   efectivoRecaudado: number
+  cobrosCredito: number
   totalCredito: number
   clientesAtendidos: number
   productosVendidos: number
@@ -48,6 +49,7 @@ interface ResumenDia {
 }
 
 interface VentaAPI {
+  fecha_negocio?: string
   id_venta: number
   id_personal: number
   id_cliente: number
@@ -67,7 +69,7 @@ export default function CierreDia() {
   const [processing, setProcessing] = useState(false)
   const [error, setError] = useState("")
   const [cierreProcesado, setCierreProcesado] = useState(false)
-  const [fecha, setFecha] = useState<string>(format(new Date(), "yyyy-MM-dd"))
+  const [fecha, setFecha] = useState<string>(today())
   const [paginaActual, setPaginaActual] = useState(1)
   const router = useRouter()
 
@@ -75,13 +77,11 @@ export default function CierreDia() {
     try {
       setLoading(true)
       setError("")
-      setPaginaActual(1) // Resetear a la primera página
+      setPaginaActual(1)
+      setCierreProcesado(false) // Resetear a la primera página
 
       const loggedUser = getLoggedUser()
       const idVendedor = loggedUser?.id_personal
-
-      console.log("[DEBUG] Usuario logueado:", loggedUser)
-      console.log("[DEBUG] ID Vendedor para filtrar:", idVendedor)
 
       if (!idVendedor) {
         throw new Error("No se pudo identificar al vendedor. Por favor, inicie sesión nuevamente.")
@@ -93,7 +93,7 @@ export default function CierreDia() {
       const cierreResponse = await fetch(cierreUrl)
       if (cierreResponse.ok) {
         const cierreData = await cierreResponse.json()
-        if (cierreData.success && cierreData.data) {
+        if (cierreData.success && cierreData.data?.cierre) {
           setCierreProcesado(true)
         }
       }
@@ -116,20 +116,15 @@ export default function CierreDia() {
         throw new Error("Formato de datos inválido desde el servidor")
       }
 
-      console.log("[DEBUG] Total ventas recibidas de la API:", data.data.ventas.length)
-      console.log("[DEBUG] Primeras 3 ventas:", data.data.ventas.slice(0, 3))
-
       // Filtrar ventas por vendedor (ya deberían estar filtradas por la API)
       const ventasDelVendedor = data.data.ventas.filter((v: VentaAPI) => {
         return v.id_personal === idVendedor
       })
 
-      console.log("[DEBUG] Ventas del vendedor después de filtrar:", ventasDelVendedor.length)
-
       // Asegurar que todas las ventas son del día seleccionado
       const ventasDelDia = ventasDelVendedor.filter((v: VentaAPI) => {
         try {
-          const ventaDate = new Date(v.fecha_venta).toISOString().split("T")[0]
+          const ventaDate = v.fecha_negocio ? v.fecha_negocio.slice(0,10) : new Date(v.fecha_venta).toISOString().split("T")[0]
           return ventaDate === fecha
         } catch {
           console.error("Error procesando fecha de venta:", v.fecha_venta)
@@ -137,35 +132,21 @@ export default function CierreDia() {
         }
       })
 
-      console.log("[DEBUG] Ventas después de filtrar por fecha:", ventasDelDia.length)
-
-      const ventasEfectivo = ventasDelDia.filter((v: VentaAPI) => v.tipo_pago === "efectivo").length
-      const ventasCredito = ventasDelDia.filter((v: VentaAPI) => v.tipo_pago === "credito").length
-      const efectivoRecaudado = ventasDelDia
-        .filter((v: VentaAPI) => v.tipo_pago === "efectivo")
-        .reduce((sum: number, v: VentaAPI) => sum + (v.total || 0), 0)
-
-      const totalCredito = ventasDelDia
-        .filter((v: VentaAPI) => v.tipo_pago === "credito")
-        .reduce((sum: number, v: VentaAPI) => sum + (v.total || 0), 0)
-
-      const productosVendidos = ventasDelDia.reduce((sum: number, v: VentaAPI) => {
-        return sum + (v.total_productos || 0)
-      }, 0)
-
-      console.log("[DEBUG] Productos vendidos calculados:", productosVendidos)
-
-      const clientesAtendidos = [...new Set(ventasDelDia.map((v: VentaAPI) => v.id_cliente))].length
+      const previewResponse = await fetch(`/API/Cierre-dia?fecha=${fecha}&preview=true`)
+      const preview = await previewResponse.json()
+      if (!previewResponse.ok) throw new Error(preview.error)
+      const totals = preview.data
 
       const resumenCalculado: ResumenDia = {
-        totalVentas: ventasDelDia.length,
-        ventasEfectivo,
-        ventasCredito,
-        efectivoRecaudado,
-        totalCredito,
-        clientesAtendidos,
-        productosVendidos,
-        montoTotal: efectivoRecaudado + totalCredito,
+        totalVentas: totals.total_ventas,
+        ventasEfectivo: totals.ventas_efectivo,
+        ventasCredito: totals.ventas_credito,
+        efectivoRecaudado: totals.efectivo_recaudado,
+        cobrosCredito: totals.cobros_credito,
+        totalCredito: totals.total_credito,
+        clientesAtendidos: totals.clientes_atendidos,
+        productosVendidos: totals.productos_vendidos,
+        montoTotal: totals.monto_total,
         ventas: ventasDelDia.map((v: VentaAPI) => ({
           id_venta: v.id_venta,
           nombre_cliente: v.nombre_cliente || "Cliente no especificado",
@@ -173,6 +154,7 @@ export default function CierreDia() {
           tipo_pago: v.tipo_pago || "desconocido",
           fecha_venta: v.fecha_venta,
           hora: new Date(v.fecha_venta).toLocaleTimeString("es-HN", {
+            timeZone: TIME_ZONE,
             hour: "2-digit",
             minute: "2-digit",
           }),
@@ -226,7 +208,6 @@ export default function CierreDia() {
       })
 
       const responseText = await response.text()
-      console.log("Respuesta del servidor:", responseText)
 
       if (!response.ok) {
         throw new Error(`Error HTTP ${response.status}: ${responseText}`)
@@ -366,7 +347,7 @@ export default function CierreDia() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">L. {(resumen?.efectivoRecaudado || 0).toFixed(2)}</div>
-              <p className="text-xs text-muted-foreground">dinero en efectivo</p>
+              <p className="text-xs text-muted-foreground">ventas cobradas en efectivo</p>
             </CardContent>
           </Card>
 
@@ -377,7 +358,7 @@ export default function CierreDia() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">L. {(resumen?.totalCredito || 0).toFixed(2)}</div>
-              <p className="text-xs text-muted-foreground">pendiente de cobro</p>
+              <p className="text-xs text-muted-foreground">crédito otorgado en la jornada</p>
             </CardContent>
           </Card>
 
@@ -393,6 +374,7 @@ export default function CierreDia() {
           </Card>
         </div>
 
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8"><Card><CardHeader><CardTitle>Cobros de créditos</CardTitle></CardHeader><CardContent className="text-2xl font-bold">L. {(resumen?.cobrosCredito || 0).toFixed(2)}</CardContent></Card><Card><CardHeader><CardTitle>Total en caja</CardTitle></CardHeader><CardContent className="text-2xl font-bold">L. {((resumen?.efectivoRecaudado || 0)+(resumen?.cobrosCredito || 0)).toFixed(2)}</CardContent></Card></div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">

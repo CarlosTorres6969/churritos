@@ -8,15 +8,6 @@ import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Loader2, User, Lock, Eye, EyeOff } from "lucide-react"
 
-interface Personal {
-  id_personal: number
-  nombre: string
-  apellido: string
-  usuario: string
-  contrasena: string
-  rol: string
-  activo: boolean
-}
 
 export default function LoginPage() {
   const [usuario, setUsuario] = useState("")
@@ -31,51 +22,11 @@ export default function LoginPage() {
     setError("")
 
     try {
-      const response = await fetch("/API/Personal", { cache: "no-store" })
-
-      if (!response.ok) {
-        throw new Error(`Error de autenticación: ${response.status}`)
-      }
-
-      let personal = await response.json()
-
-      if (!Array.isArray(personal)) personal = [personal]
-
-      if (personal.length === 0) {
-        setError("No hay usuarios configurados en el sistema")
-        return
-      }
-
-      const userFound = personal.find((p: Personal) => {
-        return (
-          p.usuario === usuario &&
-          p.contrasena === contrasena &&
-          p.activo !== false
-        )
-      })
-
-      if (userFound) {
-        const userData = {
-          id_personal: userFound.id_personal,
-          nombre: userFound.nombre,
-          apellido: userFound.apellido,
-          rol: userFound.rol,
-          usuario: userFound.usuario,
-        }
-
-        localStorage.setItem("user", JSON.stringify(userData))
-
-        const rol = (userFound.rol || "").toLowerCase()
-        if (rol === "administrador" || rol === "admin") {
-          window.location.assign("/admin")
-        } else if (rol === "vendedor") {
-          window.location.assign("/vendedor")
-        } else {
-          setError(`Rol no reconocido: ${userFound.rol}`)
-        }
-      } else {
-        setError("Credenciales incorrectas o usuario inactivo")
-      }
+      const response = await fetch("/API/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ usuario, contrasena }) })
+      const result = await response.json()
+      if (!response.ok) { setError(result.error || "No se pudo iniciar sesión"); return }
+      const user = result.data.user
+      window.location.assign(user.debe_cambiar_contrasena ? "/cambiar-contrasena" : user.rol === "administrador" ? "/admin" : "/vendedor")
     } catch {
       // Censuramos datos sensibles, solo mostramos un mensaje genérico
       console.error("Error en el login (detalles censurados)")
@@ -132,6 +83,7 @@ export default function LoginPage() {
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3 top-3 h-4 w-4 text-gray-400 hover:text-gray-600"
                   disabled={loading}
+                  aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
                 >
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>

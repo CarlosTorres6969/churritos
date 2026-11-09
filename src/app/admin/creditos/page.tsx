@@ -8,13 +8,6 @@ import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ArrowLeft, CreditCard, Users, AlertTriangle, TrendingUp } from "lucide-react";
 
-interface Cliente {
-  id_cliente: number;
-  nombre: string;
-  ruta: string;
-  telefono?: string;
-}
-
 interface ClienteCredito {
   id_credito: number;
   id_cliente: number;
@@ -23,6 +16,8 @@ interface ClienteCredito {
   saldo_vencido: number;
   fecha_actualizacion: string;
   activo: boolean;
+  dias_vencido?: number
+  proximo_vencimiento?: string | null
   dias_credito: number;
   tasa_interes: number;
 }
@@ -39,39 +34,16 @@ export default function GestionCliente() {
   const [error, setError] = useState("");
   const router = useRouter();
 
-  useEffect(() => {
-    cargarDatos();
-  }, []);
-
   const cargarDatos = async () => {
     setLoading(true);
     try {
-      // Fetch créditos
+      setError("");
       const responseCliente = await fetch("/API/Cliente-Credito?activo=true");
       if (!responseCliente.ok) {
         throw new Error("Error al obtener créditos");
       }
-      const { data: Cliente } = await responseCliente.json();
-
-      // Fetch clientes (assuming an API endpoint for clients)
-      const responseClientes = await fetch("/API/Clientes");
-      if (!responseClientes.ok) {
-        throw new Error("Error al obtener clientes");
-      }
-      const { data: clientesData } = await responseClientes.json();
-
-      // Combine créditos with cliente data
-      const ClienteConClientes = Cliente.map((credito: ClienteCredito) => {
-        const cliente = clientesData.find((c: Cliente) => c.id_cliente === credito.id_cliente);
-        return {
-          ...credito,
-          cliente: cliente?.nombre || "Cliente desconocido",
-          ruta: cliente?.ruta || "Sin ruta",
-          telefono: cliente?.telefono,
-        };
-      });
-
-      setClienteClientes(ClienteConClientes);
+      const { data } = await responseCliente.json();
+      setClienteClientes(data);
     } catch (error) {
       setError("Error al cargar datos");
       console.error("Error:", error);
@@ -80,16 +52,8 @@ export default function GestionCliente() {
     }
   };
 
-  const calcularDiasVencido = (fechaActualizacion: string, diasCredito: number): number => {
-    const fecha = new Date(fechaActualizacion);
-    const fechaVencimiento = new Date(fecha.getTime() + diasCredito * 24 * 60 * 60 * 1000);
-    const hoy = new Date();
-    const diferencia = Math.floor((hoy.getTime() - fechaVencimiento.getTime()) / (24 * 60 * 60 * 1000));
-    return Math.max(0, diferencia);
-  };
-
   const obtenerEstadoCredito = (credito: CreditoCliente) => {
-    const diasVencido = calcularDiasVencido(credito.fecha_actualizacion, credito.dias_credito);
+    const diasVencido = (credito.dias_vencido || 0);
 
     if (!credito.activo) {
       return { estado: "inactivo", color: "secondary", texto: "Inactivo" };
@@ -98,8 +62,10 @@ export default function GestionCliente() {
       return { estado: "vencido", color: "destructive", texto: "Vencido" };
     }
 
-    const fechaActualizacion = new Date(credito.fecha_actualizacion);
-    const fechaVencimiento = new Date(fechaActualizacion.getTime() + credito.dias_credito * 24 * 60 * 60 * 1000);
+    if (!credito.saldo_actual || !credito.proximo_vencimiento) {
+      return { estado: "vigente", color: "default", texto: "Sin deuda" };
+    }
+    const fechaVencimiento = new Date(credito.proximo_vencimiento.slice(0, 10) + "T12:00:00Z");
     const hoy = new Date();
     const diasRestantes = Math.floor((fechaVencimiento.getTime() - hoy.getTime()) / (24 * 60 * 60 * 1000));
 
@@ -114,6 +80,12 @@ export default function GestionCliente() {
   const totalVencido = ClienteClientes.reduce((sum, c) => sum + c.saldo_vencido, 0);
   const clientesConCredito = ClienteClientes.length;
   const clientesVencidos = ClienteClientes.filter((c) => c.saldo_vencido > 0).length;
+
+
+  useEffect(() => {
+    cargarDatos();
+  }, []);
+
 
   if (loading) {
     return (
@@ -203,8 +175,8 @@ export default function GestionCliente() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {ClienteClientes.map((credito) => {
             const estadoCredito = obtenerEstadoCredito(credito);
-            const diasVencido = calcularDiasVencido(credito.fecha_actualizacion, credito.dias_credito);
-            const porcentajeUtilizado = (credito.saldo_actual / credito.limite_credito) * 100;
+            const diasVencido = (credito.dias_vencido || 0);
+            const porcentajeUtilizado = credito.limite_credito > 0 ? (credito.saldo_actual / credito.limite_credito) * 100 : 0;
 
             return (
               <Card key={credito.id_credito} className="hover:shadow-lg transition-shadow">
@@ -212,7 +184,7 @@ export default function GestionCliente() {
                   <div className="flex items-start justify-between">
                     <div>
                       <CardTitle className="text-lg">{credito.cliente}</CardTitle>
-                      <p className="text-sm text-gray-600">{credito.ruta}</p>
+                      <p className="text-sm text-gray-600">Ruta: {credito.ruta || "Sin ruta asignada"}</p>
                       {credito.telefono && <p className="text-sm text-gray-600">{credito.telefono}</p>}
                     </div>
                     <Badge variant={estadoCredito.color as "default" | "destructive" | "secondary" | "outline" | null | undefined}>

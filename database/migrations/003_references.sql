@@ -1,0 +1,22 @@
+SET XACT_ABORT ON;
+IF EXISTS(SELECT 1 FROM dbo.Venta v LEFT JOIN dbo.Clientes c ON c.id_cliente=v.id_cliente LEFT JOIN dbo.Personal p ON p.id_personal=v.id_personal WHERE c.id_cliente IS NULL OR p.id_personal IS NULL) THROW 51000,'Sales with missing owners or clients require reconciliation',1;
+IF EXISTS(SELECT 1 FROM dbo.Detalle_Venta d LEFT JOIN dbo.Venta v ON v.id_venta=d.id_venta LEFT JOIN dbo.Producto p ON p.id_producto=d.id_producto WHERE v.id_venta IS NULL OR p.id_producto IS NULL) THROW 51000,'Orphan sale details require reconciliation',1;
+IF EXISTS(SELECT 1 FROM dbo.Inventario_Ruta i LEFT JOIN dbo.Ruta r ON r.id_ruta=i.id_ruta LEFT JOIN dbo.Producto p ON p.id_producto=i.id_producto WHERE r.id_ruta IS NULL OR p.id_producto IS NULL) THROW 51000,'Orphan inventory requires reconciliation',1;
+IF EXISTS(SELECT 1 FROM dbo.Cliente_Credito cc LEFT JOIN dbo.Clientes c ON c.id_cliente=cc.id_cliente WHERE c.id_cliente IS NULL) THROW 51000,'Orphan credit accounts require reconciliation',1;
+IF EXISTS(SELECT 1 FROM dbo.Factura f LEFT JOIN dbo.Venta v ON v.id_venta=f.id_venta LEFT JOIN dbo.CAI c ON c.id_cai=f.id_cai WHERE v.id_venta IS NULL OR c.id_cai IS NULL) THROW 51000,'Orphan invoices require reconciliation',1;
+IF EXISTS(SELECT 1 FROM dbo.Clientes c LEFT JOIN dbo.Ruta r ON c.id_ruta=r.id_ruta WHERE c.id_ruta IS NOT NULL AND r.id_ruta IS NULL) THROW 51000,'Orphan client routes require reconciliation',1;
+IF EXISTS(SELECT 1 FROM dbo.Ruta r LEFT JOIN dbo.Personal p ON r.id_personal_asignado=p.id_personal WHERE r.id_personal_asignado IS NOT NULL AND p.id_personal IS NULL) THROW 51000,'Orphan route assignments require reconciliation',1;
+IF EXISTS(SELECT 1 FROM dbo.Cliente_Credito WHERE dias_credito<1 OR dias_credito>365 OR tasa_interes<0) THROW 51000,'Invalid credit terms require reconciliation',1;
+UPDATE dbo.Clientes SET dia_visita=7 WHERE dia_visita=0;
+UPDATE dbo.Clientes SET tipo_cliente='normal' WHERE tipo_cliente IS NULL;
+IF EXISTS(SELECT 1 FROM dbo.Clientes WHERE (dia_visita IS NOT NULL AND dia_visita NOT BETWEEN 1 AND 7) OR tipo_cliente NOT IN('normal','credito','mayorista','mayorista-credito')) THROW 51000,'Invalid client categories or visit days require reconciliation',1;
+GO
+ALTER TABLE dbo.Venta ADD solicitud_hash char(64) NULL;
+ALTER TABLE dbo.Venta ADD CONSTRAINT FK_Venta_Cliente FOREIGN KEY(id_cliente) REFERENCES dbo.Clientes(id_cliente), CONSTRAINT FK_Venta_Personal FOREIGN KEY(id_personal) REFERENCES dbo.Personal(id_personal);
+ALTER TABLE dbo.Detalle_Venta ADD CONSTRAINT FK_Detalle_Venta FOREIGN KEY(id_venta) REFERENCES dbo.Venta(id_venta), CONSTRAINT FK_Detalle_Producto FOREIGN KEY(id_producto) REFERENCES dbo.Producto(id_producto);
+ALTER TABLE dbo.Inventario_Ruta ADD CONSTRAINT FK_Inventario_Ruta FOREIGN KEY(id_ruta) REFERENCES dbo.Ruta(id_ruta), CONSTRAINT FK_Inventario_Producto FOREIGN KEY(id_producto) REFERENCES dbo.Producto(id_producto);
+ALTER TABLE dbo.Cliente_Credito ADD CONSTRAINT FK_Credito_Cliente FOREIGN KEY(id_cliente) REFERENCES dbo.Clientes(id_cliente), CONSTRAINT CK_Credito_Plazo CHECK(dias_credito BETWEEN 1 AND 365 AND tasa_interes>=0);
+ALTER TABLE dbo.Factura ADD CONSTRAINT FK_Factura_Venta FOREIGN KEY(id_venta) REFERENCES dbo.Venta(id_venta), CONSTRAINT FK_Factura_CAI FOREIGN KEY(id_cai) REFERENCES dbo.CAI(id_cai);
+ALTER TABLE dbo.Clientes ADD CONSTRAINT FK_Clientes_Ruta FOREIGN KEY(id_ruta) REFERENCES dbo.Ruta(id_ruta), CONSTRAINT CK_Cliente_Dia CHECK(dia_visita IS NULL OR dia_visita BETWEEN 1 AND 7), CONSTRAINT CK_Cliente_Tipo CHECK(tipo_cliente IN('normal','credito','mayorista','mayorista-credito'));
+ALTER TABLE dbo.Ruta ADD CONSTRAINT FK_Ruta_Personal FOREIGN KEY(id_personal_asignado) REFERENCES dbo.Personal(id_personal);
+ALTER TABLE dbo.Producto ADD CONSTRAINT CK_Producto_Precios CHECK(precio_completo>=0 AND precio_medio>=0 AND precio_mayorista>=0 AND (precio_mayorista2 IS NULL OR precio_mayorista2>=0));

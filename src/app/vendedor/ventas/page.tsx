@@ -1,7 +1,8 @@
 "use client"
 
-import { useState, useEffect, useCallback, Suspense, use } from "react"
+import { useState, useEffect, useCallback, useRef, Suspense, use } from "react"
 import React from "react"
+import { availablePrices as allowedPriceTypes, stockUnits, dayOfWeek } from "@/lib/business"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -60,6 +61,8 @@ interface DetalleVenta {
 interface PriceTypeResponse {
   success: boolean
   data: {
+    nombre?: string
+    apellido?: string
     id_cliente: number
     tipo_cliente: string
     availablePrices: string[]
@@ -115,6 +118,7 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
   const [clientesFiltrados, setClientesFiltrados] = useState<Cliente[]>([])
   const [clienteSeleccionado, setClienteSeleccionado] = useState<Cliente | null>(null)
   const [availablePrices, setAvailablePrices] = useState<string[]>([])
+  const clienteRequestRef = useRef(0)
   const [detallesVenta, setDetallesVenta] = useState<DetalleVenta[]>([])
   const [tipoPago, setTipoPago] = useState<"efectivo" | "credito">("efectivo")
   const [efectivoRecibido, setEfectivoRecibido] = useState<number>(0)
@@ -129,35 +133,70 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
   const [terminoBusqueda, setTerminoBusqueda] = useState("")
   const router = useRouter()
 
+  async function fetchRutaUsuario(idPersonal: number) {
+    try {
+      setCargandoRuta(true)
+
+      const response = await fetch("/API/rutas")
+      if (response.ok) {
+        const data = await response.json()
+
+        if (data.success && data.data && data.data.length > 0) {
+          const rutaDelUsuario = data.data.find((ruta: Ruta) => ruta.id_personal_asignado === idPersonal && ruta.activa)
+
+          if (rutaDelUsuario) {
+            setRutaUsuario(rutaDelUsuario)
+          } else {
+            const rutaAsignada = data.data.find((ruta: Ruta) => ruta.id_personal_asignado === idPersonal)
+
+            if (rutaAsignada) {
+              setRutaUsuario(rutaAsignada)
+            } else {
+              setError("No tienes una ruta asignada. Contacta al administrador.")
+            }
+          }
+        } else {
+          setError("No hay rutas disponibles en el sistema")
+        }
+      } else {
+        setError("Error al cargar las rutas")
+      }
+    } catch (error) {
+      console.error("Error al obtener rutas:", error)
+      setError("Error de conexión al cargar rutas")
+    } finally {
+      setCargandoRuta(false)
+    }
+  }
+
+  const claveVentaRef = useRef("")
+
   const esStockMedio = (stock: number): boolean => {
     return Math.abs(stock - 0.5) < 0.1
   }
 
-  // Productos cuya descripción pertenece a este grupo NUNCA usan precio_medio.
-  // Siempre se venden con precio_completo, sin importar el stock, tipo de cliente
-  // ni la lógica automática de precio medio.
-  const PRODUCTOS_SOLO_PRECIO_COMPLETO = ["G", "C", "MEGA", "CCP", "CHF", "CF"]
-
-  const usaSoloPrecioCompleto = (producto: Producto): boolean => {
-    const descripcion = (producto.descripcion ?? "").trim().toUpperCase()
-    return PRODUCTOS_SOLO_PRECIO_COMPLETO.includes(descripcion)
-  }
+  // El tipo de cliente y el producto usan las mismas reglas que el servidor.
+  const usaSoloPrecioCompleto = (producto: Producto): boolean => allowedPriceTypes(clienteSeleccionado?.tipo_cliente || "normal", producto.descripcion).length === 1
 
   const fetchClientAndPrices = useCallback(
     async (clientId: string) => {
+      const version = ++clienteRequestRef.current
       try {
         const response = await fetch(`/API/Ventas?id_cliente=${clientId}`)
         const data: PriceTypeResponse = await response.json()
+        if (version !== clienteRequestRef.current) return
         if (data.success) {
           const clienteCompleto = clientesDisponibles.find((c) => c.id_cliente === Number.parseInt(clientId))
           if (clienteCompleto) {
-            setClienteSeleccionado(clienteCompleto)
+            setClienteSeleccionado({ ...clienteCompleto, limite_credito: data.data.limite_credito, saldo_actual: data.data.saldo_actual })
           } else {
             setClienteSeleccionado({
               id_cliente: data.data.id_cliente,
-              nombre: "Cliente",
-              apellido: "",
+              nombre: data.data.nombre || "Cliente",
+              apellido: data.data.apellido || "",
               tipo_cliente: data.data.tipo_cliente,
+              limite_credito: data.data.limite_credito,
+              saldo_actual: data.data.saldo_actual,
             })
           }
           setAvailablePrices(data.data.availablePrices)
@@ -165,6 +204,7 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
           setError("Error al cargar información del cliente")
         }
       } catch (error) {
+        if (version !== clienteRequestRef.current) return
         console.error("Error al obtener precios del cliente:", error)
         setError("Error al cargar precios disponibles")
       }
@@ -173,7 +213,7 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
   )
 
   const obtenerDiaActualNumero = (): number => {
-    return new Date().getDay() === 0 ? 7 : new Date().getDay()
+    return dayOfWeek()
   }
 
   // Función para filtrar clientes por término de búsqueda y día actual
@@ -302,14 +342,14 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
   }, [rutaUsuario])
 
   useEffect(() => {
-    const obtenerUsuario = async () => {
+    async function obtenerUsuario() {
       try {
         const user = requireAuth()
         setUsuarioAutenticado(user as UsuarioAutenticado)
         await fetchRutaUsuario(user.id_personal)
       } catch (error) {
         console.error("Error al obtener el usuario autenticado:", error)
-        router.push("/login")
+        router.push("/")
       }
     }
 
@@ -330,7 +370,7 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
         .sort((a, b) => a.id_producto - b.id_producto)
       setProductosFiltrados(productosFiltrados)
     } else {
-      const productosOrdenados = productosDisponibles.sort((a, b) => a.id_producto - b.id_producto)
+      const productosOrdenados = [...productosDisponibles].sort((a, b) => a.id_producto - b.id_producto)
       setProductosFiltrados(productosOrdenados)
     }
   }, [productosDisponibles, rutaUsuario])
@@ -345,53 +385,20 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
     }
   }, [resolvedSearchParams, clienteSeleccionado, fetchClientAndPrices, isInitialLoad, usuarioAutenticado])
 
-  const fetchRutaUsuario = async (idPersonal: number) => {
-    try {
-      setCargandoRuta(true)
-
-      const response = await fetch("/API/rutas")
-      if (response.ok) {
-        const data = await response.json()
-
-        if (data.success && data.data && data.data.length > 0) {
-          const rutaDelUsuario = data.data.find((ruta: Ruta) => ruta.id_personal_asignado === idPersonal && ruta.activa)
-
-          if (rutaDelUsuario) {
-            setRutaUsuario(rutaDelUsuario)
-          } else {
-            const rutaAsignada = data.data.find((ruta: Ruta) => ruta.id_personal_asignado === idPersonal)
-
-            if (rutaAsignada) {
-              setRutaUsuario(rutaAsignada)
-            } else {
-              setError("No tienes una ruta asignada. Contacta al administrador.")
-            }
-          }
-        } else {
-          setError("No hay rutas disponibles en el sistema")
-        }
-      } else {
-        setError("Error al cargar las rutas")
-      }
-    } catch (error) {
-      console.error("Error al obtener rutas:", error)
-      setError("Error de conexión al cargar rutas")
-    } finally {
-      setCargandoRuta(false)
-    }
-  }
-
   const obtenerNombreDia = (numeroDia: number | null | undefined): string => {
     if (!numeroDia || numeroDia < 1 || numeroDia > 7) return "Sin asignar"
     return DIAS_SEMANA_MAP[numeroDia] || "Sin asignar"
   }
 
-  const seleccionarCliente = async (cliente: Cliente) => {
+  async function seleccionarCliente(cliente: Cliente) {
+    const version = ++clienteRequestRef.current
+    if (clienteSeleccionado?.id_cliente !== cliente.id_cliente) { setDetallesVenta([]); claveVentaRef.current=""; setTipoPago("efectivo"); setEfectivoRecibido(0) }
     setClienteSeleccionado(cliente)
     setError("")
     try {
       const response = await fetch(`/API/Ventas?id_cliente=${cliente.id_cliente}`)
       const data: PriceTypeResponse = await response.json()
+      if (version !== clienteRequestRef.current) return
       if (data.success) {
         setAvailablePrices(data.data.availablePrices)
         // Actualizar la información de crédito del cliente
@@ -405,6 +412,7 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
         setAvailablePrices([])
       }
     } catch (error) {
+      if (version !== clienteRequestRef.current) return
       console.error("Error al obtener tipos de precio:", error)
       setError("Error al cargar precios disponibles")
       setAvailablePrices([])
@@ -425,141 +433,40 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
   }
 
   const agregarProducto = (producto: Producto) => {
-    if (!clienteSeleccionado) {
-      setError("Debe seleccionar un cliente primero")
-      return
-    }
-
-    const stockDisponible = Math.abs(producto.stock) < 0.01 ? 0 : producto.stock
-    if (stockDisponible < 0.5) {
-      setError(`No hay stock suficiente para ${producto.nombre} (stock: ${stockDisponible})`)
-      return
-    }
-
-    let precioTipo: "completo" | "medio" | "mayorista" | "mayorista2"
-
-    if (usaSoloPrecioCompleto(producto)) {
-      // Estos productos siempre se venden con precio completo, nunca medio.
-      precioTipo = "completo"
-    } else {
-      precioTipo = clienteSeleccionado.tipo_cliente.includes("mayorista") ? "mayorista" : "medio"
-
-      if (esStockMedio(stockDisponible)) {
-        if (!availablePrices.includes("medio")) {
-          setError(`No se puede vender ${producto.nombre} con stock de 0.5 a este cliente, ya que no permite precio medio`)
-          return
-        }
-        precioTipo = "medio"
-      }
-    }
-
-    const precio = obtenerPrecio(producto, precioTipo)
-    const detalleExistente = detallesVenta.find(
-      (d) => d.id_producto === producto.id_producto && d.tipo_precio === precioTipo,
-    )
-
-    if (detalleExistente) {
-      if (esStockMedio(stockDisponible) && detalleExistente.cantidad >= 1) {
-        setError(`Solo puedes agregar 1 unidad de ${producto.nombre} (stock: ${stockDisponible})`)
-        return
-      }
-
-      if (detalleExistente.cantidad + 1 > stockDisponible) {
-        setError(`No hay suficiente stock para ${producto.nombre}. Stock disponible: ${stockDisponible}`)
-        return
-      }
-
-      actualizarCantidad(detalleExistente, detalleExistente.cantidad + 1)
-    } else {
-      const nuevoDetalle: DetalleVenta = {
-        id_producto: producto.id_producto,
-        producto,
-        cantidad: 1,
-        tipo_precio: precioTipo,
-        subtotal: precio,
-      }
-      setDetallesVenta([...detallesVenta, nuevoDetalle])
-    }
-  }
+  if (!clienteSeleccionado) { setError("Seleccione un cliente"); return }
+  const tipo = clienteSeleccionado.tipo_cliente.includes("mayorista") ? "mayorista" : usaSoloPrecioCompleto(producto) ? "completo" : "medio"
+  const used = detallesVenta.filter(d => d.id_producto === producto.id_producto).reduce((sum,d) => sum + stockUnits(d.cantidad,d.tipo_precio),0)
+  if (used + stockUnits(1,tipo) > producto.stock + 0.00001) { setError("No hay inventario suficiente para " + producto.nombre); return }
+  claveVentaRef.current = ""; setError("")
+  const existing = detallesVenta.find(d => d.id_producto === producto.id_producto && d.tipo_precio === tipo)
+  if (existing) actualizarCantidad(existing,existing.cantidad+1)
+  else setDetallesVenta(prev => [...prev,{ id_producto:producto.id_producto,producto,cantidad:1,tipo_precio:tipo,subtotal:obtenerPrecio(producto,tipo) }])
+}
 
   const actualizarCantidad = (detalle: DetalleVenta, nuevaCantidad: number) => {
-    if (nuevaCantidad <= 0) {
-      eliminarDetalle(detalle)
-      return
-    }
-
-    const stockDisponible = Math.abs(detalle.producto.stock) < 0.01 ? 0 : detalle.producto.stock
-
-    if (nuevaCantidad > stockDisponible) {
-      setError(`No hay suficiente stock para ${detalle.producto.nombre}. Stock disponible: ${stockDisponible}`)
-      return
-    }
-
-    let nuevoTipoPrecio = detalle.tipo_precio
-    if (usaSoloPrecioCompleto(detalle.producto)) {
-      // Estos productos nunca cambian a precio medio, ni con stock de 0.5.
-      nuevoTipoPrecio = "completo"
-    } else if (esStockMedio(stockDisponible)) {
-      if (!availablePrices.includes("medio")) {
-        setError(`No se puede vender ${detalle.producto.nombre} con stock de 0.5 a este cliente, ya que no permite precio medio`)
-        return
-      }
-      nuevoTipoPrecio = "medio"
-      if (nuevaCantidad > 1) {
-        setError(`Solo puedes vender 1 unidad de ${detalle.producto.nombre} (stock: ${stockDisponible})`)
-        return
-      }
-    }
-
-    const precio = obtenerPrecio(detalle.producto, nuevoTipoPrecio)
-    const nuevoSubtotal = precio * nuevaCantidad
-
-    setDetallesVenta((prev) =>
-      prev.map((d) =>
-        d === detalle
-          ? { ...d, cantidad: nuevaCantidad, tipo_precio: nuevoTipoPrecio, subtotal: nuevoSubtotal }
-          : d
-      ),
-    )
-  }
+  if (nuevaCantidad <= 0) { eliminarDetalle(detalle); return }
+  if (!Number.isSafeInteger(nuevaCantidad)) return
+  const others = detallesVenta.filter(d => d.id_producto === detalle.id_producto && d !== detalle).reduce((sum,d) => sum+stockUnits(d.cantidad,d.tipo_precio),0)
+  if (others+stockUnits(nuevaCantidad,detalle.tipo_precio)>detalle.producto.stock+0.00001) { setError("Inventario insuficiente"); return }
+  claveVentaRef.current = ""; setError("")
+  setDetallesVenta(prev => prev.map(d => d===detalle ? {...d,cantidad:nuevaCantidad,subtotal:obtenerPrecio(d.producto,d.tipo_precio)*nuevaCantidad} : d))
+}
 
   const cambiarTipoPrecio = (detalle: DetalleVenta, nuevoTipo: "completo" | "medio" | "mayorista" | "mayorista2") => {
-    const esSoloCompleto = usaSoloPrecioCompleto(detalle.producto)
+  if (!clienteSeleccionado || !allowedPriceTypes(clienteSeleccionado.tipo_cliente,detalle.producto.descripcion).includes(nuevoTipo)) { setError("Precio no permitido para este cliente y producto"); return }
+  const others = detallesVenta.filter(d => d.id_producto===detalle.id_producto && d!==detalle).reduce((sum,d) => sum+stockUnits(d.cantidad,d.tipo_precio),0)
+  if (others+stockUnits(detalle.cantidad,nuevoTipo)>detalle.producto.stock+0.00001) { setError("Inventario insuficiente para ese precio"); return }
+  claveVentaRef.current=""; setError("")
+  setDetallesVenta(prev => prev.map(d => d===detalle ? {...d,tipo_precio:nuevoTipo,subtotal:obtenerPrecio(d.producto,nuevoTipo)*d.cantidad} : d))
+}
 
-    // Estos productos nunca aceptan precio medio: se cancela y se mantiene completo.
-    if (esSoloCompleto && nuevoTipo === "medio") {
-      setError(`${detalle.producto.nombre} no permite precio medio, se mantiene precio completo`)
-      return
-    }
-
-    if (!availablePrices.includes(nuevoTipo)) {
-      setError(`El tipo de precio ${nuevoTipo} no está disponible para este cliente`)
-      return
-    }
-
-    const stockDisponible = Math.abs(detalle.producto.stock) < 0.01 ? 0 : detalle.producto.stock
-
-    if (!esSoloCompleto && esStockMedio(stockDisponible) && nuevoTipo !== "medio") {
-      setError(`Solo se puede usar precio medio para ${detalle.producto.nombre} con stock de 0.5`)
-      return
-    }
-
-    const precio = obtenerPrecio(detalle.producto, nuevoTipo)
-    const nuevoSubtotal = precio * detalle.cantidad
-    setDetallesVenta((prev) =>
-      prev.map((d) => (d === detalle ? { ...d, tipo_precio: nuevoTipo, subtotal: nuevoSubtotal } : d)),
-    )
-  }
-
-  const eliminarDetalle = (detalle: DetalleVenta) => {
-    setDetallesVenta((prev) => prev.filter((d) => d !== detalle))
-  }
+  const eliminarDetalle = (detalle: DetalleVenta) => { claveVentaRef.current=""; setDetallesVenta(prev => prev.filter(d => d!==detalle)) }
 
   const calcularTotal = (): number => {
-    return detallesVenta.reduce((total, detalle) => total + detalle.subtotal, 0)
+    return detallesVenta.reduce((total, detalle) => total + Math.round(detalle.subtotal * 100), 0) / 100
   }
 
-  const procesarVenta = async () => {
+  async function procesarVenta() {
     if (!clienteSeleccionado || detallesVenta.length === 0) {
       setError("Seleccione un cliente y agregue productos")
       return
@@ -575,7 +482,9 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
         throw new Error("Usuario no autenticado")
       }
 
+      if (!claveVentaRef.current) claveVentaRef.current = crypto.randomUUID()
       const ventaData = {
+        clave_idempotencia: claveVentaRef.current,
         id_cliente: clienteSeleccionado.id_cliente,
         id_personal: usuarioAutenticado.id_personal,
         tipo_pago: tipoPago,
@@ -604,6 +513,7 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
       if (result.success) {
         await fetchProductos()
         setDetallesVenta([])
+        claveVentaRef.current = ""
         setEfectivoRecibido(0)
         setError("")
         alert(`¡Venta procesada exitosamente! ID: ${result.data.id_venta}`)
@@ -684,7 +594,7 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
                 Vendedor: {usuarioAutenticado.nombre} {usuarioAutenticado.apellido} (ID:{" "}
                 {usuarioAutenticado.id_personal})
               </div>
-              <div className="flex space-x-2">
+              <div className="flex flex-wrap gap-2">
                 <Button onClick={fetchClientes} variant="outline" disabled={cargandoClientes} size="sm">
                   {cargandoClientes ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
                   Actualizar Clientes
@@ -763,6 +673,9 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
                         size="sm"
                         onClick={() => {
                           setClienteSeleccionado(null)
+                          clienteRequestRef.current++
+                          setDetallesVenta([])
+                          claveVentaRef.current=""
                           setAvailablePrices([])
                         }}
                       >
@@ -847,7 +760,7 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
                       const stockDisponible = Math.abs(detalle.producto.stock) < 0.01 ? 0 : detalle.producto.stock
                       const esSoloCompleto = usaSoloPrecioCompleto(detalle.producto)
                       // Para los productos de solo precio completo, nunca se aplica la lógica de precio medio.
-                      const esStockMedioProducto = !esSoloCompleto && esStockMedio(stockDisponible)
+                      const esStockMedioProducto = !esSoloCompleto && !clienteSeleccionado?.tipo_cliente.includes("mayorista") && esStockMedio(stockDisponible)
 
                       return (
                         <div key={index} className="border rounded-lg p-3 space-y-2">
@@ -878,7 +791,7 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
                               variant="outline"
                               size="sm"
                               onClick={() => actualizarCantidad(detalle, detalle.cantidad + 1)}
-                              disabled={detalle.cantidad >= stockDisponible || esStockMedioProducto}
+                              disabled={detallesVenta.filter(d => d.id_producto === detalle.id_producto).reduce((sum,d) => sum+stockUnits(d.cantidad,d.tipo_precio),0)+stockUnits(1,detalle.tipo_precio)>stockDisponible+0.00001 || esStockMedioProducto}
                               title={
                                 detalle.cantidad >= stockDisponible
                                   ? "No hay más stock disponible"
@@ -1020,7 +933,7 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
                       const stockDisponible = Math.abs(producto.stock) < 0.01 ? 0 : producto.stock
                       const esSoloCompleto = usaSoloPrecioCompleto(producto)
                       // Para los productos de solo precio completo, nunca se aplica la lógica de precio medio.
-                      const esStockMedioProducto = !esSoloCompleto && esStockMedio(stockDisponible)
+                      const esStockMedioProducto = !esSoloCompleto && !clienteSeleccionado?.tipo_cliente.includes("mayorista") && esStockMedio(stockDisponible)
                       const precioMostrar = esSoloCompleto
                         ? producto.precio_completo
                         : clienteSeleccionado?.tipo_cliente.includes("mayorista")
@@ -1029,7 +942,7 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
                             : producto.precio_mayorista
                           : esStockMedioProducto
                             ? producto.precio_medio
-                            : producto.precio_completo
+                            : producto.precio_medio
 
                       const estaSeleccionado = detallesVenta.some(d => d.id_producto === producto.id_producto)
 
@@ -1049,7 +962,7 @@ function RealizarVentaContent({ resolvedSearchParams }: RealizarVentaContentProp
                             {esStockMedioProducto && ' (Última unidad)'}
                           </p>
                           <p className="text-sm font-medium mt-1">
-                            Precio: L. {precioMostrar.toFixed(2)} ({esSoloCompleto ? 'Precio Completo' : esStockMedioProducto ? 'medio' : clienteSeleccionado?.tipo_cliente.includes("mayorista") ? 'mayorista' : 'completo'})
+                            Precio: L. {precioMostrar.toFixed(2)} ({esSoloCompleto ? 'Precio Completo' : esStockMedioProducto ? 'medio' : clienteSeleccionado?.tipo_cliente.includes("mayorista") ? 'mayorista' : 'medio'})
                           </p>
                           <Button
                             onClick={() => agregarProducto(producto)}

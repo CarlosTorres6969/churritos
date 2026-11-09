@@ -1,10 +1,12 @@
 "use client"
+import { useRouter } from "next/navigation"
 
 import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { ArrowLeft, BarChart3, DollarSign, Users, TrendingUp, Eye, X } from "lucide-react"
+import { MonthlySales } from "@/components/monthly-sales"
 
 // Tipos
 interface VentaVendedor {
@@ -26,6 +28,7 @@ interface ResumenGeneral {
 }
 
 interface VentaDetalle {
+  id_personal: number
   id_venta: number
   fecha_venta: string
   total: number
@@ -34,140 +37,35 @@ interface VentaDetalle {
   nombre_personal: string
 }
 
-interface ApiResponse {
-  success: boolean
-  data: {
-    Ventas?: VentaDetalle[]
-    ventas?: VentaDetalle[]
-    pagination?: {
-      page: number
-      pageSize: number
-      total: number
-      totalPages: number
-    }
-  }
-  error?: string
-}
-
 export default function RegistroVentas() {
   const [VentasPorVendedor, setVentasPorVendedor] = useState<VentaVendedor[]>([])
   const [resumenGeneral, setResumenGeneral] = useState<ResumenGeneral | null>(null)
   const [todasLasVentas, setTodasLasVentas] = useState<VentaDetalle[]>([]) // 👈 nuevo
   const [loading, setLoading] = useState(true)
+  const router=useRouter()
+  const [paginaDetalle,setPaginaDetalle]=useState(1)
+  const [paginasDetalle,setPaginasDetalle]=useState(1)
+  const cargarDetalle=async(id:number,page:number)=>{const response=await fetch("/API/Ventas?id_vendedor="+id+"&page="+page+"&pageSize=100");const result=await response.json();if(!response.ok){setError(result.error);return}setTodasLasVentas(result.data.ventas);setPaginaDetalle(page);setPaginasDetalle(result.data.pagination.totalPages||1)}
   const [error, setError] = useState("")
   const [detalleVendedor, setDetalleVendedor] = useState<VentaVendedor | null>(null)
 
-  useEffect(() => {
-    cargarDatosVentas()
-  }, [])
-
   const cargarDatosVentas = async () => {
-    setLoading(true)
-    setError("")
-    try {
-      const response = await fetch(`/API/Ventas?page=1&pageSize=1000`)
+  try {const response=await fetch("/API/resumen");const result=await response.json();if(!response.ok)throw new Error(result.error);const d=result.data;setVentasPorVendedor(d.ventas_por_vendedor);setResumenGeneral({total_Ventas:d.ventas_historicas,total_efectivo:d.efectivo_historico,total_credito:d.credito_historico,total_clientes:d.clientes_historicos,vendedores_activos:d.ventas_por_vendedor.length})}catch(failure){setError(failure instanceof Error?failure.message:"No se pudo cargar el resumen")}finally{setLoading(false)}
+}
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-
-      const result: ApiResponse = await response.json()
-      console.log("📌 Respuesta API:", result)
-
-      if (!result.success) {
-        throw new Error(result.error || "Error al cargar datos")
-      }
-
-      const ventas: VentaDetalle[] = result.data?.Ventas ?? result.data?.ventas ?? []
-      if (!Array.isArray(ventas)) {
-        throw new Error("Formato inesperado en los datos de ventas")
-      }
-
-      setTodasLasVentas(ventas) // 👈 guardamos TODAS las ventas
-
-      const vendedoresMap = new Map<string, VentaVendedor>()
-      let totalVentas = 0
-      let totalEfectivo = 0
-      let totalCredito = 0
-      const clientesAtendidos = new Set<string>()
-
-      ventas.forEach((venta) => {
-        const vendedor = venta.nombre_personal
-        totalVentas++
-        clientesAtendidos.add(venta.nombre_cliente)
-
-        if (venta.tipo_pago === "efectivo") {
-          totalEfectivo += venta.total
-        } else {
-          totalCredito += venta.total
-        }
-
-        if (!vendedoresMap.has(vendedor)) {
-          vendedoresMap.set(vendedor, {
-            id_personal: Math.random(), // idealmente usar id_personal real si lo trae la API
-            vendedor: vendedor,
-            Ventas_dia: 0,
-            efectivo_recaudado: 0,
-            credito_otorgado: 0,
-            clientes_atendidos: 0,
-            total_vendido: 0,
-          })
-        }
-
-        const vendedorData = vendedoresMap.get(vendedor)!
-        vendedorData.Ventas_dia++
-        vendedorData.total_vendido += venta.total
-
-        if (venta.tipo_pago === "efectivo") {
-          vendedorData.efectivo_recaudado += venta.total
-        } else {
-          vendedorData.credito_otorgado += venta.total
-        }
-      })
-
-      const clientesPorVendedor = new Map<string, Set<string>>()
-      ventas.forEach((venta) => {
-        if (!clientesPorVendedor.has(venta.nombre_personal)) {
-          clientesPorVendedor.set(venta.nombre_personal, new Set())
-        }
-        clientesPorVendedor.get(venta.nombre_personal)!.add(venta.nombre_cliente)
-      })
-
-      vendedoresMap.forEach((vendedor, nombre) => {
-        vendedor.clientes_atendidos = clientesPorVendedor.get(nombre)?.size || 0
-      })
-
-      setVentasPorVendedor(Array.from(vendedoresMap.values()))
-      setResumenGeneral({
-        total_Ventas: totalVentas,
-        total_efectivo: totalEfectivo,
-        total_credito: totalCredito,
-        total_clientes: clientesAtendidos.size,
-        vendedores_activos: vendedoresMap.size,
-      })
-    } catch (error) {
-      setError(error instanceof Error ? error.message : "Error desconocido")
-      console.error("Error:", error)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const verDetalleVendedor = (vendedor: VentaVendedor) => {
-    setDetalleVendedor(vendedor)
-  }
+  const verDetalleVendedor = async (vendedor: VentaVendedor) => {setDetalleVendedor(vendedor);await cargarDetalle(vendedor.id_personal,1)}
 
   const cerrarDetalle = () => {
     setDetalleVendedor(null)
   }
 
-  const generarLiquidacion = async (idVendedor: number) => {
-    try {
-      alert(`Funcionalidad de liquidación pendiente de implementar para el vendedor ID: ${idVendedor}`)
-    } catch (error) {
-      setError(error instanceof Error ? error.message : "Error al generar liquidación")
-    }
-  }
+  const generarLiquidacion = (idVendedor: number) => { router.push("/admin/Cierre-dia?vendedor="+idVendedor) }
+
+
+  useEffect(() => {
+    cargarDatosVentas()
+  }, [])
+
 
   if (loading) {
     return (
@@ -260,6 +158,7 @@ export default function RegistroVentas() {
           </div>
         )}
 
+        <MonthlySales />
         {/* VENTAS POR VENDEDOR */}
         <Card>
           <CardHeader>
@@ -361,7 +260,7 @@ export default function RegistroVentas() {
                 </thead>
                 <tbody>
                   {todasLasVentas
-                    .filter((venta) => venta.nombre_personal === detalleVendedor.vendedor)
+                    .filter((venta) => venta.id_personal === detalleVendedor.id_personal)
                     .map((venta) => (
                       <tr key={venta.id_venta} className="border-t">
                         <td className="p-2">{new Date(venta.fecha_venta).toLocaleDateString()}</td>
@@ -374,6 +273,7 @@ export default function RegistroVentas() {
               </table>
             </div>
 
+            <div className="flex justify-between items-center py-3"><Button disabled={paginaDetalle<=1} onClick={()=>cargarDetalle(detalleVendedor.id_personal,paginaDetalle-1)}>Anterior</Button><span>Página {paginaDetalle} de {paginasDetalle}</span><Button disabled={paginaDetalle>=paginasDetalle} onClick={()=>cargarDetalle(detalleVendedor.id_personal,paginaDetalle+1)}>Siguiente</Button></div>
             <div className="pt-4">
               <Button
                 variant="outline"

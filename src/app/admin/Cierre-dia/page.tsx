@@ -1,4 +1,6 @@
 "use client"
+import { csvCell } from "@/lib/business"
+import { requireAuth } from "@/lib/auth"
 
 import type React from "react"
 import { useState, useEffect, useCallback } from "react"
@@ -53,6 +55,8 @@ interface CierreDia {
   productos_vendidos: number
   monto_total: number
   fecha_registro: string
+  cobros_credito?: number
+  total_efectivo_caja?: number
   cerrado: boolean
   liquidacion?: Liquidacion[]
 }
@@ -132,11 +136,10 @@ const DetallesCierreModal = ({
   }
 
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString)
-    const adjustedDate = new Date(date.getTime() + (date.getTimezoneOffset() * 60000))
-    return adjustedDate.toLocaleDateString("es-HN", { timeZone: "America/Tegucigalpa" })
+    return new Date(dateString.slice(0,10) + "T12:00:00Z").toLocaleDateString("es-HN", { timeZone: "America/Tegucigalpa" })
   }
 
+  const requiereRevision=cierre.liquidacion?.some(item=>item.liquidacion_vendedor===null&&item.tipo==="DETALLE")
   const detalles = cierre.liquidacion?.filter((item) => item.tipo === "DETALLE") || []
   const totalesVendedor = cierre.liquidacion?.filter((item) => item.tipo === "TOTAL_VENDEDOR") || []
   const totalGeneral = cierre.liquidacion?.find((item) => item.tipo === "TOTAL_GENERAL")
@@ -151,6 +154,7 @@ const DetallesCierreModal = ({
           </button>
         </div>
 
+        {requiereRevision && <p role="alert" className="mb-4 rounded bg-amber-50 p-3 text-amber-900">La liquidación histórica requiere conciliación: no se conocen los precios y comisiones originales.</p>}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div className="space-y-2">
             <h3 className="font-semibold text-gray-700">Información General</h3>
@@ -180,8 +184,10 @@ const DetallesCierreModal = ({
               <span className="font-medium">Efectivo Recaudado:</span> {formatCurrency(cierre.efectivo_recaudado)}
             </p>
             <p>
-              <span className="font-medium">Crédito Pendiente:</span> {formatCurrency(cierre.total_credito)}
+              <span className="font-medium">Crédito otorgado:</span> {formatCurrency(cierre.total_credito)}
             </p>
+            <p><span className="font-medium">Cobros de créditos:</span> {formatCurrency(cierre.cobros_credito || 0)}</p>
+            <p><span className="font-medium">Total en caja:</span> {formatCurrency(cierre.efectivo_recaudado + (cierre.cobros_credito || 0))}</p>
           </div>
         </div>
 
@@ -296,17 +302,13 @@ const DetallesCierreModal = ({
                     <div className="text-center">
                       <p className="text-sm text-gray-600">Total Liquidación Vendedores</p>
                       <p className="text-lg font-bold text-green-600">
-                        {totalGeneral.total_liquidacion_vendedor
-                          ? formatCurrency(totalGeneral.total_liquidacion_vendedor)
-                          : formatCurrency(0)}
+                        {formatCurrency(totalGeneral.total_liquidacion_vendedor ?? null)}
                       </p>
                     </div>
                     <div className="text-center">
                       <p className="text-sm text-gray-600">Total Liquidación Empresa</p>
                       <p className="text-lg font-bold text-blue-600">
-                        {totalGeneral.total_liquidacion_empresa
-                          ? formatCurrency(totalGeneral.total_liquidacion_empresa)
-                          : formatCurrency(0)}
+                        {formatCurrency(totalGeneral.total_liquidacion_empresa ?? null)}
                       </p>
                     </div>
                   </div>
@@ -339,7 +341,7 @@ export default function CierresPage() {
   const [personal, setPersonal] = useState<Personal[]>([])
   const [loading, setLoading] = useState(true)
   const [fechaFilter, setFechaFilter] = useState("")
-  const [vendedorFilter, setVendedorFilter] = useState("")
+  const [vendedorFilter, setVendedorFilter] = useState(() => typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("vendedor") || "")
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [totalCount, setTotalCount] = useState(0)
@@ -366,10 +368,10 @@ export default function CierresPage() {
 
       if (data.success) {
         if (fechaFilter) {
-          const cierresArray = data.data.cierre ? [data.data.cierre] : []
+          const cierresArray = data.data.cierres || (data.data.cierre ? [data.data.cierre] : [])
           const cierresConLiquidacion = cierresArray.map((cierre: CierreDia) => ({
             ...cierre,
-            liquidacion: data.data.liquidacion || []
+            liquidacion: (data.data.liquidacion || []).filter((row: Liquidacion) => row.tipo === "TOTAL_GENERAL" || row.id_personal === cierre.id_personal)
           }))
           setCierres(cierresConLiquidacion)
           setTotalPages(1)
@@ -411,13 +413,13 @@ export default function CierresPage() {
   }, [])
 
   useEffect(() => {
-    const userData = localStorage.getItem("user")
+    const userData = requireAuth()
     if (!userData) {
       router.push("/")
       return
     }
 
-    const parsedUser = JSON.parse(userData)
+    const parsedUser = userData
     if (parsedUser.rol !== "administrador" && parsedUser.rol !== "admin") {
       router.push("/")
       return
@@ -448,20 +450,12 @@ export default function CierresPage() {
   }
 
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString)
-    const adjustedDate = new Date(date.getTime() + (date.getTimezoneOffset() * 60000))
-    return adjustedDate.toLocaleDateString("es-HN", { timeZone: "America/Tegucigalpa" })
+    return new Date(dateString.slice(0,10) + "T12:00:00Z").toLocaleDateString("es-HN", { timeZone: "America/Tegucigalpa" })
   }
 
   const handleExport = () => {
-    const headers =
-      "Fecha,Vendedor,Ventas Total,Ventas Efectivo,Ventas Crédito,Efectivo Recaudado,Crédito Pendiente,Clientes,Productos,Monto Total\n"
-    const csvContent = cierres
-      .map(
-        (cierre) =>
-          `"${formatDate(cierre.fecha_cierre)}","${cierre.nombre_personal}",${cierre.total_ventas},${cierre.ventas_efectivo},${cierre.ventas_credito},${cierre.efectivo_recaudado},${cierre.total_credito},${cierre.clientes_atendidos},${cierre.productos_vendidos},${cierre.monto_total}`,
-      )
-      .join("\n")
+    const headers = "Fecha,Vendedor,Ventas Total,Ventas Efectivo,Ventas Crédito,Efectivo en ventas,Crédito otorgado,Cobros de crédito,Total en caja,Clientes,Productos,Monto Total\n"
+    const csvContent = cierres.map(cierre => [formatDate(cierre.fecha_cierre),cierre.nombre_personal,cierre.total_ventas,cierre.ventas_efectivo,cierre.ventas_credito,cierre.efectivo_recaudado,cierre.total_credito,cierre.cobros_credito || 0,cierre.efectivo_recaudado+(cierre.cobros_credito || 0),cierre.clientes_atendidos,cierre.productos_vendidos,cierre.monto_total].map(csvCell).join(",")).join("\n")
 
     const blob = new Blob([headers + csvContent], { type: "text/csv" })
     const url = URL.createObjectURL(blob)
@@ -478,7 +472,7 @@ export default function CierresPage() {
     let cierre = cierreParam
     if (!cierre.liquidacion || cierre.liquidacion.length === 0) {
       try {
-        const response = await fetch(`/API/Cierre-dia?fecha=${cierre.fecha_cierre}&id_vendedor=${cierre.id_personal}`)
+        const response = await fetch(`/API/Cierre-dia?fecha=${cierre.fecha_cierre.slice(0,10)}&id_vendedor=${cierre.id_personal}`)
         const data = await response.json()
         if (data.success) {
           cierre = {
@@ -653,7 +647,7 @@ export default function CierresPage() {
                       <TableHead className="text-right">Ventas Efectivo</TableHead>
                       <TableHead className="text-right">Ventas Crédito</TableHead>
                       <TableHead className="text-right">Efectivo Recaudado</TableHead>
-                      <TableHead className="text-right">Crédito Pendiente</TableHead>
+                      <TableHead className="text-right">Crédito otorgado</TableHead>
                       <TableHead className="text-right">Clientes</TableHead>
                       <TableHead className="text-right">Productos</TableHead>
                       <TableHead className="text-right">Monto Total</TableHead>

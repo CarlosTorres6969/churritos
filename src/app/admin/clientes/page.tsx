@@ -17,16 +17,22 @@ interface Cliente {
   id_cliente?: number
   nombre: string
   apellido: string
-  telefono?: string
+  telefono?: string | null
   direccion: string
-  email?: string
+  email?: string | null
   id_ruta?: number
   dia_visita?: number
   tipo_cliente?: string
-  ultima_visita?: string
+  ultima_visita?: string | null
   activo?: boolean
   limite_credito?: number
   saldo_actual?: number
+}
+
+type ClienteForm = Omit<Cliente, "telefono" | "email" | "ultima_visita"> & {
+  telefono: string
+  email: string
+  ultima_visita: string
 }
 
 interface Ruta {
@@ -44,12 +50,13 @@ export default function GestionClientes() {
   const [error, setError] = useState("")
   const [modalAbierto, setModalAbierto] = useState(false)
   const [clienteEditando, setClienteEditando] = useState<Cliente | null>(null)
-  const [formData, setFormData] = useState<Cliente>({
+  const [formData, setFormData] = useState<ClienteForm>({
     nombre: "",
     apellido: "",
     telefono: "",
     direccion: "",
     email: "",
+    ultima_visita: "",
     id_ruta: undefined,
     dia_visita: undefined,
     tipo_cliente: "normal",
@@ -65,7 +72,7 @@ export default function GestionClientes() {
     { valor: 4, nombre: "Jueves" },
     { valor: 5, nombre: "Viernes" },
     { valor: 6, nombre: "Sábado" },
-    { valor: 0, nombre: "Domingo" },
+    { valor: 7, nombre: "Domingo" },
   ]
 
   const tiposCliente = [
@@ -94,14 +101,6 @@ export default function GestionClientes() {
     setClientesFiltrados(filtrados)
   }, [clientes, busqueda, filtroTipo])
 
-  useEffect(() => {
-    cargarDatos()
-  }, [])
-
-  useEffect(() => {
-    filtrarClientes()
-  }, [clientes, busqueda, filtroTipo, filtrarClientes])
-
   const cargarDatos = async () => {
     try {
       const [clientesRes, rutasRes] = await Promise.all([fetch("/API/Clientes"), fetch("/API/rutas")])
@@ -127,7 +126,12 @@ export default function GestionClientes() {
   const abrirModal = (cliente?: Cliente) => {
     if (cliente) {
       setClienteEditando(cliente)
-      setFormData(cliente)
+      setFormData({
+        ...cliente,
+        telefono: cliente.telefono ?? "",
+        email: cliente.email ?? "",
+        ultima_visita: cliente.ultima_visita ?? "",
+      })
     } else {
       setClienteEditando(null)
       setFormData({
@@ -136,6 +140,7 @@ export default function GestionClientes() {
         telefono: "",
         direccion: "",
         email: "",
+        ultima_visita: "",
         id_ruta: undefined,
         dia_visita: undefined,
         tipo_cliente: "normal",
@@ -215,6 +220,17 @@ export default function GestionClientes() {
     const diaObj = diasSemana.find((d) => d.valor === dia)
     return diaObj ? diaObj.nombre : "Día no válido"
   }
+
+
+  useEffect(() => {
+    cargarDatos()
+  }, [])
+
+
+  useEffect(() => {
+    filtrarClientes()
+  }, [clientes, busqueda, filtroTipo, filtrarClientes])
+
 
   if (loading) {
     return (

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useCallback, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -20,6 +20,8 @@ interface CreditoPendiente {
   saldo_vencido: number
   fecha_actualizacion: string
   activo: boolean
+  dias_vencido?: number
+  proximo_vencimiento?: string | null
   dias_credito: number
   tasa_interes: number
   cliente?: string
@@ -28,6 +30,7 @@ interface CreditoPendiente {
   telefono?: string
   ultima_compra?: string
   id_ruta?: number
+  ruta?: string | null
 }
 
 interface RutaUsuario {
@@ -42,56 +45,16 @@ export default function CreditosPendientes() {
   const [creditoSeleccionado, setCreditoSeleccionado] = useState<CreditoPendiente | null>(null)
   const [modalPagoAbierto, setModalPagoAbierto] = useState(false)
   const [montoPago, setMontoPago] = useState<number>(0)
+  const [procesandoPago,setProcesandoPago]=useState(false)
+  const pagoRef=useRef<{key:string;amount:number;credit:number}|null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
   const [rutaUsuario, setRutaUsuario] = useState<RutaUsuario | null>(null)
-  const [usuarioAutenticado, setUsuarioAutenticado] = useState<{ id_personal: number; nombre: string; apellido: string } | null>(null)
+  const [, setUsuarioAutenticado] = useState<{ id_personal: number; nombre: string; apellido: string } | null>(null)
   const router = useRouter()
 
-  const obtenerRutaUsuario = useCallback(async (idPersonal: number) => {
-    try {
-      const response = await fetch('/API/rutas');
-      if (response.ok) {
-        const data = await response.json();
-        
-        if (data.success && data.data && data.data.length > 0) {
-          const rutaDelUsuario = data.data.find((ruta: RutaUsuario) => 
-            ruta.id_personal_asignado === idPersonal && ruta.activa
-          );
-          
-          if (rutaDelUsuario) {
-            setRutaUsuario(rutaDelUsuario);
-            cargarCreditosPendientes(rutaDelUsuario.id_ruta);
-          } else {
-            const rutaAsignada = data.data.find((ruta: RutaUsuario) => 
-              ruta.id_personal_asignado === idPersonal
-            );
-            
-            if (rutaAsignada) {
-              setRutaUsuario(rutaAsignada);
-              cargarCreditosPendientes(rutaAsignada.id_ruta);
-            } else {
-              setError("No tienes una ruta asignada. Contacta al administrador.");
-              setLoading(false);
-            }
-          }
-        } else {
-          setError("No hay rutas disponibles en el sistema");
-          setLoading(false);
-        }
-      } else {
-        setError("Error al cargar la información de tu ruta");
-        setLoading(false);
-      }
-    } catch (error) {
-      console.error("Error fetching user route:", error);
-      setError("Error de conexión al cargar la información de tu ruta");
-      setLoading(false);
-    }
-  }, [])
-
-  const cargarCreditosPendientes = async (idRuta: number) => {
+  async function cargarCreditosPendientes(idRuta: number) {
     try {
       setLoading(true)
       const response = await fetch(`/API/Cliente-Credito?id_ruta=${idRuta}&activo=true`)
@@ -119,146 +82,80 @@ export default function CreditosPendientes() {
     }
   }
 
-  useEffect(() => {
-    const obtenerUsuario = async () => {
-      try {
-        const user = requireAuth();
-        setUsuarioAutenticado(user);
-        await obtenerRutaUsuario(user.id_personal);
-      } catch (error) {
-        console.error("Error al obtener el usuario autenticado:", error);
-        router.push("/login");
+
+  const obtenerRutaUsuario = useCallback(async (idPersonal: number) => {
+    try {
+      const response = await fetch('/API/rutas');
+      if (response.ok) {
+        const data = await response.json();
+
+        if (data.success && data.data && data.data.length > 0) {
+          const rutaDelUsuario = data.data.find((ruta: RutaUsuario) =>
+            ruta.id_personal_asignado === idPersonal && ruta.activa
+          );
+
+          if (rutaDelUsuario) {
+            setRutaUsuario(rutaDelUsuario);
+            cargarCreditosPendientes(rutaDelUsuario.id_ruta);
+          } else {
+            const rutaAsignada = data.data.find((ruta: RutaUsuario) =>
+              ruta.id_personal_asignado === idPersonal
+            );
+
+            if (rutaAsignada) {
+              setRutaUsuario(rutaAsignada);
+              cargarCreditosPendientes(rutaAsignada.id_ruta);
+            } else {
+              setError("No tienes una ruta asignada. Contacta al administrador.");
+              setLoading(false);
+            }
+          }
+        } else {
+          setError("No hay rutas disponibles en el sistema");
+          setLoading(false);
+        }
+      } else {
+        setError("Error al cargar la información de tu ruta");
+        setLoading(false);
       }
-    };
-    
-    obtenerUsuario();
-  }, [obtenerRutaUsuario, router])
+    } catch (error) {
+      console.error("Error fetching user route:", error);
+      setError("Error de conexión al cargar la información de tu ruta");
+      setLoading(false);
+    }
+  }, [])
 
   const abrirModalPago = (credito: CreditoPendiente) => {
     setCreditoSeleccionado(credito)
+    pagoRef.current=null
     setMontoPago(0)
     setModalPagoAbierto(true)
     setError("")
     setSuccess("")
   }
 
-  const procesarPago = async () => {
-    if (!creditoSeleccionado || montoPago <= 0) {
-      setError("Ingrese un monto válido")
-      return
-    }
-
-    if (montoPago > creditoSeleccionado.saldo_actual) {
-      setError("El monto no puede ser mayor al saldo actual")
-      return
-    }
-
-    try {
-      const nuevoSaldoActual = creditoSeleccionado.saldo_actual - montoPago
-      let nuevoSaldoVencido = creditoSeleccionado.saldo_vencido
-
-      if (montoPago > creditoSeleccionado.saldo_actual - creditoSeleccionado.saldo_vencido) {
-        const pagoVencido = montoPago - (creditoSeleccionado.saldo_actual - creditoSeleccionado.saldo_vencido)
-        nuevoSaldoVencido = Math.max(0, creditoSeleccionado.saldo_vencido - pagoVencido)
-      }
-
-      const response = await fetch("/API/Cliente-Credito", {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          id_credito: creditoSeleccionado.id_credito,
-          saldo_actual: nuevoSaldoActual,
-          saldo_vencido: nuevoSaldoVencido,
-          fecha_actualizacion: new Date().toISOString(),
-        }),
-      })
-
-      if (!response.ok) {
-        throw new Error("Error al procesar el pago")
-      }
-
-      const result = await response.json()
-
-      if (!result.success) {
-        throw new Error(result.error || "Error al procesar el pago")
-      }
-
-      setCreditos((prev) =>
-        prev.map((credito) =>
-          credito.id_credito === creditoSeleccionado.id_credito
-            ? {
-                ...credito,
-                saldo_actual: result.data.saldo_actual,
-                saldo_vencido: result.data.saldo_vencido,
-                fecha_actualizacion: result.data.fecha_actualizacion,
-              }
-            : credito,
-        ),
-      )
-
-      setSuccess(`Pago de L. ${montoPago.toFixed(2)} procesado exitosamente`)
-      setMontoPago(0)
-
-      // Enviar notificación por correo
-      try {
-        console.log("Enviando notificación por correo...")
-        const emailResponse = await fetch("/API/enviar-correo", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            tipo: "pago_credito",
-            cliente: creditoSeleccionado.nombre_cliente && creditoSeleccionado.apellido_cliente 
-              ? `${creditoSeleccionado.nombre_cliente} ${creditoSeleccionado.apellido_cliente}`
-              : creditoSeleccionado.cliente || "Cliente desconocido",
-            monto: montoPago.toFixed(2),
-            vendedor: usuarioAutenticado ? `${usuarioAutenticado.nombre} ${usuarioAutenticado.apellido}` : "No especificado",
-          }),
-        })
-        
-        const emailResult = await emailResponse.json()
-        console.log("Respuesta del correo:", emailResult)
-        
-        if (emailResult.success) {
-          console.log("✅ Correo enviado exitosamente")
-        } else {
-          console.error("❌ Error al enviar correo:", emailResult.error)
-        }
-      } catch (emailError) {
-        console.error("Error al enviar notificación por correo:", emailError)
-        // No mostramos error al usuario, solo lo registramos
-      }
-
-      setTimeout(() => {
-        setModalPagoAbierto(false)
-        setSuccess("")
-      }, 2000)
-    } catch (error) {
-      setError("Error al procesar el pago")
-      console.error("Error:", error)
-    }
-  }
-
-  const calcularDiasVencido = (fechaActualizacion: string, diasCredito: number): number => {
-    const fechaBase = new Date(fechaActualizacion)
-    const fechaVencimiento = new Date(fechaBase.getTime() + diasCredito * 24 * 60 * 60 * 1000)
-    const hoy = new Date()
-    const diferencia = Math.floor((hoy.getTime() - fechaVencimiento.getTime()) / (24 * 60 * 60 * 1000))
-    return Math.max(0, diferencia)
-  }
+  async function procesarPago() {
+  if (!creditoSeleccionado || montoPago<=0 || procesandoPago) return
+  setProcesandoPago(true); setError("")
+  if (!pagoRef.current || pagoRef.current.amount!==montoPago || pagoRef.current.credit!==creditoSeleccionado.id_credito) pagoRef.current={key:crypto.randomUUID(),amount:montoPago,credit:creditoSeleccionado.id_credito}
+  try {
+    const response=await fetch("/API/Cliente-Credito/"+creditoSeleccionado.id_credito+"/pagos",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({monto:montoPago,clave_idempotencia:pagoRef.current.key})})
+    const result=await response.json()
+    if(!response.ok)throw new Error(result.error||"No se pudo registrar el pago")
+    setModalPagoAbierto(false);setMontoPago(0);pagoRef.current=null;setSuccess("Pago registrado correctamente")
+    if(rutaUsuario)await cargarCreditosPendientes(rutaUsuario.id_ruta)
+  }catch(failure){setError(failure instanceof Error?failure.message:"No se pudo registrar el pago")}
+  finally{setProcesandoPago(false)}
+}
 
   const obtenerEstadoCredito = (credito: CreditoPendiente) => {
-    const diasVencido = calcularDiasVencido(credito.fecha_actualizacion, credito.dias_credito)
+    const diasVencido = (credito.dias_vencido || 0)
 
     if (credito.saldo_vencido > 0 || diasVencido > 0) {
       return { estado: "vencido", color: "destructive" as const, texto: "Vencido" }
     }
 
-    const fechaBase = new Date(credito.fecha_actualizacion)
-    const fechaVencimiento = new Date(fechaBase.getTime() + credito.dias_credito * 24 * 60 * 60 * 1000)
+    const fechaVencimiento = new Date((credito.proximo_vencimiento || "9999-12-31").slice(0,10) + "T12:00:00Z")
     const hoy = new Date()
     const diasRestantes = Math.floor((fechaVencimiento.getTime() - hoy.getTime()) / (24 * 60 * 60 * 1000))
 
@@ -272,6 +169,23 @@ export default function CreditosPendientes() {
   const totalCreditos = creditos.reduce((sum, c) => sum + c.saldo_actual, 0)
   const totalVencido = creditos.reduce((sum, c) => sum + c.saldo_vencido, 0)
   const creditosVencidos = creditos.filter((c) => c.saldo_vencido > 0).length
+
+
+  useEffect(() => {
+    async function obtenerUsuario() {
+      try {
+        const user = requireAuth();
+        setUsuarioAutenticado(user);
+        await obtenerRutaUsuario(user.id_personal);
+      } catch (error) {
+        console.error("Error al obtener el usuario autenticado:", error);
+        router.push("/");
+      }
+    }
+
+    obtenerUsuario();
+  }, [obtenerRutaUsuario, router])
+
 
   if (loading) {
     return (
@@ -368,7 +282,7 @@ export default function CreditosPendientes() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {creditos.map((credito) => {
             const estadoCredito = obtenerEstadoCredito(credito)
-            const diasVencido = calcularDiasVencido(credito.fecha_actualizacion, credito.dias_credito)
+            const diasVencido = (credito.dias_vencido || 0)
 
             return (
               <Card key={credito.id_credito} className="hover:shadow-lg transition-shadow">
@@ -376,6 +290,7 @@ export default function CreditosPendientes() {
                   <div className="flex items-start justify-between">
                     <div>
                       <CardTitle className="text-lg">{credito.cliente || `Cliente #${credito.id_cliente}`}</CardTitle>
+                      <p className="text-sm text-gray-600">Ruta: {credito.ruta || "Sin ruta asignada"}</p>
                       {credito.telefono && <p className="text-sm text-gray-600">{credito.telefono}</p>}
                     </div>
                     <Badge variant={estadoCredito.color}>{estadoCredito.texto}</Badge>
@@ -509,7 +424,7 @@ export default function CreditosPendientes() {
                   <Button variant="outline" onClick={() => setModalPagoAbierto(false)}>
                     Cancelar
                   </Button>
-                  <Button onClick={procesarPago} disabled={montoPago <= 0}>
+                  <Button onClick={procesarPago} disabled={montoPago <= 0 || procesandoPago}>
                     Procesar Pago
                   </Button>
                 </div>

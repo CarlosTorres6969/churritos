@@ -32,28 +32,7 @@ export default function GestionClientes() {
   const [user, setUser] = useState<UserData | null>(null)
   const router = useRouter()
 
-  const diasSemana = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"]
-
-  useEffect(() => {
-    // Verificar autenticación y obtener datos del usuario
-    const obtenerUsuario = () => {
-      try {
-        const userData = requireAuth();
-        if (userData.rol !== "vendedor") {
-          router.push("/")
-          return
-        }
-
-        setUser(userData)
-        cargarClientes(userData.id_personal)
-      } catch (error) {
-        console.error("Error al obtener el usuario autenticado:", error);
-        router.push("/login");
-      }
-    };
-    
-    obtenerUsuario();
-  }, [router])
+  const diasSemana = ["Sin asignar", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
 
   const filtrarClientes = useCallback(() => {
     if (!busqueda) {
@@ -68,10 +47,6 @@ export default function GestionClientes() {
       setClientesFiltrados(filtrados)
     }
   }, [clientes, busqueda])
-
-  useEffect(() => {
-    filtrarClientes()
-  }, [filtrarClientes])
 
   const cargarClientes = async (idPersonal: number) => {
     try {
@@ -96,8 +71,7 @@ export default function GestionClientes() {
   }
 
   const seleccionarClienteParaVenta = (cliente: Cliente) => {
-    localStorage.setItem("clienteVenta", JSON.stringify(cliente))
-    router.push("/vendedor/ventas")
+    router.push("/vendedor/ventas?clientId=" + cliente.id_cliente)
   }
 
   const obtenerColorTipoCliente = (tipo: string) => {
@@ -112,6 +86,34 @@ export default function GestionClientes() {
         return "bg-blue-100 text-blue-800"
     }
   }
+
+
+  useEffect(() => {
+    // Verificar autenticación y obtener datos del usuario
+    const obtenerUsuario = () => {
+      try {
+        const userData = requireAuth();
+        if (userData.rol !== "vendedor") {
+          router.push("/")
+          return
+        }
+
+        setUser(userData)
+        cargarClientes(userData.id_personal)
+      } catch (error) {
+        console.error("Error al obtener el usuario autenticado:", error);
+        router.push("/");
+      }
+    };
+
+    obtenerUsuario();
+  }, [router])
+
+
+  useEffect(() => {
+    filtrarClientes()
+  }, [filtrarClientes])
+
 
   if (loading) {
     return (
@@ -225,8 +227,8 @@ export default function GestionClientes() {
               <Users className="h-12 w-12 mx-auto text-gray-400 mb-4" />
               <h3 className="text-lg font-medium text-gray-900 mb-2">No se encontraron clientes</h3>
               <p className="text-gray-600">
-                {busqueda 
-                  ? "No hay clientes que coincidan con tu búsqueda" 
+                {busqueda
+                  ? "No hay clientes que coincidan con tu búsqueda"
                   : "No tienes clientes asignados a tu ruta"}
               </p>
             </CardContent>

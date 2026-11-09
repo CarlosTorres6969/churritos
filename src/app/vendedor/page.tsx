@@ -1,4 +1,5 @@
 "use client"
+import { requireAuth, logout } from "@/lib/auth"
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
@@ -34,22 +35,6 @@ interface VendedorStats {
   facturasPendientes: number
 }
 
-// Interfaces for API data
-interface Venta {
-  id_personal: number
-  id_cliente: number
-  total_productos: number
-  total: number
-}
-
-interface Credito {
-  saldo_pendiente: number
-}
-
-interface Factura {
-  estado: "pendiente" | "pagada"
-}
-
 export default function VendedorDashboard() {
   const [user, setUser] = useState<User | null>(null)
   const [stats, setStats] = useState<VendedorStats>({
@@ -63,71 +48,11 @@ export default function VendedorDashboard() {
   const [loading, setLoading] = useState(true)
   const router = useRouter()
 
-  useEffect(() => {
-    const userData = localStorage.getItem("user")
-    if (!userData) {
-      router.push("/")
-      return
-    }
+  const loadDashboardData = async () => {
+  try {setLoading(true);const response=await fetch("/API/resumen",{cache:"no-store"});const result=await response.json();if(!response.ok)throw new Error(result.error);const d=result.data;setStats({totalVentas:d.ventas_historicas,totalClientesAtendidos:d.clientes_historicos,totalProductosVendidos:d.productos_historicos,montoTotal:d.monto_historico,creditosPendientes:d.creditos_pendientes,facturasPendientes:d.facturas_hoy})}catch(error){console.error("No se pudo cargar el resumen",error)}finally{setLoading(false)}
+}
 
-    const parsedUser = JSON.parse(userData)
-    if (parsedUser.rol !== "vendedor") {
-      router.push("/")
-      return
-    }
-
-    setUser(parsedUser)
-    loadDashboardData(parsedUser.id_personal)
-  }, [router])
-
-  const loadDashboardData = async (idPersonal: number) => {
-    try {
-      setLoading(true)
-
-      // Cargar ventas del vendedor del día actual
-      const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Tegucigalpa" })
-      const ventasResponse = await fetch(`/API/Ventas?id_vendedor=${idPersonal}&fecha=${today}&sin_limite=true`)
-      const ventasData = await ventasResponse.json()
-      const ventas: Venta[] = ventasData.success && Array.isArray(ventasData.data?.ventas) 
-        ? ventasData.data.ventas 
-        : []
-      const ventasVendedor = ventas
-
-      // Cargar créditos pendientes
-      const creditosResponse = await fetch("/API/Cliente-Credito?all=true")
-      const creditosData = await creditosResponse.json()
-      const creditos: Credito[] = creditosData.success && Array.isArray(creditosData.data)
-        ? creditosData.data
-        : Array.isArray(creditosData) ? creditosData : []
-      const creditosPendientes = creditos.filter((c: Credito) => c.saldo_pendiente > 0)
-
-      // Cargar facturas del vendedor del día actual
-      const facturasResponse = await fetch(`/API/Factura?id_personal=${idPersonal}&page=1&pageSize=1000&fechaInicio=${today}&fechaFin=${today}`)
-      const facturasData = await facturasResponse.json()
-      const facturas: Factura[] = facturasData.success && Array.isArray(facturasData.data?.facturas)
-        ? facturasData.data.facturas
-        : []
-      const facturasPendientes = facturas.filter((f: Factura) => f.estado === "pendiente")
-
-      setStats({
-        totalVentas: ventasVendedor.length,
-        totalClientesAtendidos: new Set(ventasVendedor.map((v: Venta) => v.id_cliente)).size,
-        totalProductosVendidos: ventasVendedor.reduce((sum: number, v: Venta) => sum + (v.total_productos || 0), 0),
-        montoTotal: ventasVendedor.reduce((sum: number, v: Venta) => sum + (v.total || 0), 0),
-        creditosPendientes: creditosPendientes.length,
-        facturasPendientes: facturasPendientes.length,
-      })
-    } catch (error) {
-      console.error("Error cargando datos del dashboard:", error)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleLogout = () => {
-    localStorage.removeItem("user")
-    router.push("/")
-  }
+  const handleLogout = async () => { await logout() }
 
   const menuItems = [
     {
@@ -179,6 +104,25 @@ export default function VendedorDashboard() {
       stats: stats.creditosPendientes,
     },
   ]
+
+
+  useEffect(() => {
+    const userData = requireAuth()
+    if (!userData) {
+      router.push("/")
+      return
+    }
+
+    const parsedUser = userData
+    if (parsedUser.rol !== "vendedor") {
+      router.push("/")
+      return
+    }
+
+    setUser(parsedUser)
+    loadDashboardData()
+  }, [router])
+
 
   if (loading) {
     return (

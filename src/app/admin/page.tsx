@@ -1,10 +1,13 @@
 "use client"
+import { requireAuth, logout, getLoggedUser } from "@/lib/auth"
 
 import { useState, useEffect, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { MonthlySales } from "@/components/monthly-sales"
+import { formatBusinessDate, today } from "@/lib/business"
 import {
   Users,
   ShoppingCart,
@@ -60,41 +63,8 @@ interface CierreDia {
   cerrado: boolean
 }
 
-// Nuevas interfaces para tipar los datos de las APIs
-interface Venta {
-  fecha_venta: string
-  total: number
-}
-
-interface Cliente {
-  activo: boolean
-}
-
-interface Producto {
-  activo: boolean
-}
-
-interface Credito {
-  saldo_pendiente: number
-}
-
-interface Factura {
-  estado: string
-}
-
-interface Personal {
-  id_personal: number
-  nombre: string
-  activo: boolean
-  rol: string
-}
-
-interface Ruta {
-  activo: boolean
-}
-
 export default function AdminDashboard() {
-  const [user, setUser] = useState<User | null>(null)
+  const [user] = useState<User | null>(() => getLoggedUser())
   const [stats, setStats] = useState<AdminStats>({
     totalVentas: 0,
     totalClientes: 0,
@@ -112,141 +82,29 @@ export default function AdminDashboard() {
   const router = useRouter()
 
   // ✅ Función para normalizar cualquier respuesta de API en un array, ahora genérica y tipada
-  const normalizeData = useCallback(<T,>(data: unknown): T[] => {
-    if (!data) return []
-    if (Array.isArray(data)) return data as T[]
-    if (typeof data === "object") {
-      if (data && "data" in data && Array.isArray(data.data)) return data.data as T[]
-      if (data && "ventas" in data && Array.isArray(data.ventas)) return data.ventas as T[]
-      return [data] as T[] // si es un objeto único, lo convertimos en array
-    }
-    return []
-  }, [])
-
-  const checkCierresPendientes = useCallback(async (vendedores: Personal[], hoy: string): Promise<number> => {
-    try {
-      let pendientes = 0
-      for (const vendedor of vendedores) {
-        const res = await fetch(`/API/Cierre-dia?fecha=${hoy}&id_vendedor=${vendedor.id_personal}`)
-        // 404 significa que no hay cierre para ese vendedor hoy, es un caso esperado
-        if (res.status === 404 || !res.ok) {
-          pendientes++
-        } else {
-          const data = await res.json()
-          if (!data.success || !data.data) {
-            pendientes++
-          }
-        }
-      }
-      return pendientes
-    } catch (error) {
-      console.error("Error verificando cierres pendientes:", error)
-      return 0
-    }
-  }, [])
-
   const loadDashboardData = useCallback(async () => {
-    try {
-      const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Tegucigalpa" })
-
-      // Cargar ventas de hoy y el resto en paralelo
-      const [
-        ventasRes,
-        clientesRes,
-        productosRes,
-        creditosRes,
-        facturasRes,
-        personalRes,
-        rutasRes,
-        cierresRes
-      ] = await Promise.all([
-        fetch(`/API/Ventas?fecha=${hoy}&sin_limite=true`),
-        fetch("/API/Clientes"),
-        fetch("/API/Productos"),
-        fetch("/API/Cliente-Credito"),
-        fetch(`/API/Factura?page=1&pageSize=1&fechaInicio=${hoy}&fechaFin=${hoy}`),
-        fetch("/API/Personal"),
-        fetch("/API/rutas"),
-        fetch("/API/Cierre-dia?page=1&pageSize=5"),
-      ])
-
-      const [
-        ventasRaw,
-        clientesRaw,
-        productosRaw,
-        creditosRaw,
-        facturasRaw,
-        personalRaw,
-        rutasRaw,
-        cierresRaw
-      ] = await Promise.all([
-        ventasRes.json(),
-        clientesRes.json(),
-        productosRes.json(),
-        creditosRes.json(),
-        facturasRes.json(),
-        personalRes.json(),
-        rutasRes.json(),
-        cierresRes.json(),
-      ])
-
-      const ventas = ventasRaw.success && Array.isArray(ventasRaw.data?.ventas) ? ventasRaw.data.ventas as Venta[] : []
-      const clientes = normalizeData<Cliente>(clientesRaw)
-      const productos = normalizeData<Producto>(productosRaw)
-      const creditos = normalizeData<Credito>(creditosRaw)
-      const personal = normalizeData<Personal>(personalRaw)
-      const rutas = normalizeData<Ruta>(rutasRaw)
-      const cierres = normalizeData<CierreDia>(cierresRaw.data?.cierres || cierresRaw)
-
-      // Total de facturas del día desde paginación
-      const totalFacturasHoy = facturasRaw.success ? (facturasRaw.data?.pagination?.total || 0) : 0
-
-      const vendedoresActivos = personal.filter((p: Personal) => p.activo && p.rol === "vendedor")
-      const rutasActivas = rutas.filter((r: Ruta) => r.activo)
-
-      // Obtener cierres pendientes
-      const vendedoresSinCierre = await checkCierresPendientes(vendedoresActivos, hoy)
-
-      setStats({
-        totalVentas: ventas.length,
-        totalClientes: clientes.filter((c: Cliente) => c.activo).length,
-        totalProductos: productos.filter((p: Producto) => p.activo).length,
-        montoTotal: ventas.reduce((sum: number, v: Venta) => sum + (v.total || 0), 0),
-        ventasHoy: ventas.length,
-        creditosPendientes: creditos.filter((c: Credito) => c.saldo_pendiente > 0).length,
-        facturasPendientes: totalFacturasHoy,
-        vendedoresActivos: vendedoresActivos.length,
-        rutasActivas: rutasActivas.length,
-        cierresPendientes: vendedoresSinCierre,
-      })
-
-      setRecentCierres(cierres.slice(0, 5))
-    } catch (error) {
-      console.error("Error cargando datos del dashboard:", error)
-    }
-  }, [normalizeData, checkCierresPendientes])
+  try { const response=await fetch("/API/resumen",{cache:"no-store"});const result=await response.json();if(!response.ok)throw new Error(result.error);const d=result.data;
+    setStats({totalVentas:d.ventas_historicas,totalClientes:d.clientes_activos,totalProductos:d.productos_activos,montoTotal:d.monto_historico,ventasHoy:d.ventas_hoy,creditosPendientes:d.creditos_pendientes,facturasPendientes:d.facturas_hoy,vendedoresActivos:d.vendedores_activos,rutasActivas:d.rutas_activas,cierresPendientes:d.cierres_pendientes});setRecentCierres(d.cierres_recientes)
+  }catch(error){console.error("No se pudo cargar el resumen",error)}
+},[])
 
   useEffect(() => {
-    const userData = localStorage.getItem("user")
+    const userData = requireAuth()
     if (!userData) {
       router.push("/")
       return
     }
 
-    const parsedUser: User = JSON.parse(userData)
+    const parsedUser: User = userData
     if (parsedUser.rol !== "administrador" && parsedUser.rol !== "admin") {
       router.push("/")
       return
     }
 
-    setUser(parsedUser)
     loadDashboardData()
   }, [router, loadDashboardData]) // Se agregó loadDashboardData a las dependencias
 
-  const handleLogout = () => {
-    localStorage.removeItem("user")
-    router.push("/")
-  }
+  const handleLogout = async () => { await logout() }
 
   const menuItems = [
     {
@@ -339,7 +197,7 @@ export default function AdminDashboard() {
       {/* Header */}
       <header className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-4">
+          <div className="flex flex-wrap justify-between items-center gap-4 py-4">
             <div>
               <h1 className="text-2xl font-bold text-gray-900">Panel de Administración</h1>
               <p className="text-sm text-gray-600">
@@ -349,7 +207,7 @@ export default function AdminDashboard() {
             <div className="flex items-center space-x-4">
               <Badge variant="secondary" className="flex items-center gap-1">
                 <Clock className="h-3 w-3" />
-                {new Date().toLocaleDateString("es-HN")}
+                {formatBusinessDate(today())}
               </Badge>
               <Button variant="outline" onClick={handleLogout}>
                 <LogOut className="h-4 w-4 mr-2" />
@@ -436,6 +294,7 @@ export default function AdminDashboard() {
           ))}
         </div>
 
+        <MonthlySales />
         {/* Panel de control rápido */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
           <div className="bg-white rounded-lg shadow p-6">
@@ -491,7 +350,7 @@ export default function AdminDashboard() {
                     <div>
                       <p className="font-medium">{cierre.nombre_personal}</p>
                       <p className="text-sm text-gray-500">
-                        {new Date(cierre.fecha_cierre).toLocaleDateString("es-HN")}
+                        {formatBusinessDate(cierre.fecha_cierre)}
                       </p>
                     </div>
                     <div className="text-right">

@@ -15,12 +15,17 @@ interface Producto {
   id_producto?: number
   codigo: string
   nombre: string
-  descripcion?: string
+  descripcion?: string | null
   precio_completo: number
   precio_medio: number
   precio_mayorista: number
-  precio_mayorista2?: number
+  precio_mayorista2?: number | null
   activo?: boolean
+}
+
+type ProductoForm = Omit<Producto, "descripcion" | "precio_mayorista2"> & {
+  descripcion: string
+  precio_mayorista2: number
 }
 
 export default function GestionProductos() {
@@ -31,7 +36,7 @@ export default function GestionProductos() {
   const [error, setError] = useState("")
   const [modalAbierto, setModalAbierto] = useState(false)
   const [productoEditando, setProductoEditando] = useState<Producto | null>(null)
-  const [formData, setFormData] = useState<Producto>({
+  const [formData, setFormData] = useState<ProductoForm>({
     codigo: "",
     nombre: "",
     descripcion: "",
@@ -42,10 +47,6 @@ export default function GestionProductos() {
     activo: true,
   })
   const router = useRouter()
-
-  useEffect(() => {
-    cargarProductos()
-  }, [])
 
   const filtrarProductos = useCallback(() => {
     if (!busqueda) {
@@ -59,10 +60,6 @@ export default function GestionProductos() {
       setProductosFiltrados(filtrados)
     }
   }, [productos, busqueda])
-
-  useEffect(() => {
-    filtrarProductos()
-  }, [filtrarProductos])
 
   const cargarProductos = async () => {
     try {
@@ -87,7 +84,8 @@ export default function GestionProductos() {
       setProductoEditando(producto)
       setFormData({
         ...producto,
-        precio_mayorista2: producto.precio_mayorista2 || 0
+        descripcion: producto.descripcion ?? "",
+        precio_mayorista2: producto.precio_mayorista2 ?? 0,
       })
     } else {
       setProductoEditando(null)
@@ -159,6 +157,17 @@ export default function GestionProductos() {
     }
   }
 
+
+  useEffect(() => {
+    cargarProductos()
+  }, [])
+
+
+  useEffect(() => {
+    filtrarProductos()
+  }, [filtrarProductos])
+
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -172,7 +181,7 @@ export default function GestionProductos() {
       {/* Header */}
       <header className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between py-4">
+          <div className="flex flex-wrap items-center justify-between gap-4 py-4">
             <div className="flex items-center space-x-4">
               <Button variant="ghost" onClick={() => router.back()}>
                 <ArrowLeft className="h-4 w-4 mr-2" />

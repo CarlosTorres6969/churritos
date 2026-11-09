@@ -9,11 +9,13 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { ArrowLeft, FileText, Eye, Printer, Download, Search, Loader2 } from "lucide-react"
+import { escapeHtml } from "@/lib/business"
 import { requireAuth } from "@/lib/auth"
 import { posprinter, type POSPrintOptions, A7_CONFIG } from "@/lib/pos-printer"
 
 // Interfaces (mantenidas del código original)
 interface Factura {
+  nombre_vendedor: string | null
   id_factura: number
   numero_factura: string
   nombre_cliente: string
@@ -21,6 +23,8 @@ interface Factura {
   monto_total: number
   codigo_cai: string
   anulada: boolean
+  rango_inicial_snapshot?: number
+  rango_final_snapshot?: number
   id_personal?: number
   productos?: Producto[]
 }
@@ -33,6 +37,9 @@ interface Producto {
 }
 
 interface FacturaDetalle {
+  nombre_vendedor: string | null
+  rango_inicial_snapshot?: number
+  rango_final_snapshot?: number
   id_factura: number
   numero_factura: string
   nombre_cliente: string
@@ -81,8 +88,6 @@ declare global {
     checkPrinter?: () => Promise<string>
   }
 }
-
-let abortController = new AbortController()
 
 interface PrintFontSize {
   normal: number
@@ -187,7 +192,7 @@ export default function FacturasVendedor() {
 
   // Función para formatear fechas de manera consistente en zona horaria de Honduras
   const formatDateForDisplay = useCallback((dateString: string): string => {
-    const date = new Date(dateString + "T00:00:00") // Asumir inicio del día
+    const date = new Date(dateString.slice(0,10) + "T12:00:00Z") // Asumir inicio del día
     return date.toLocaleDateString("es-HN", {
       timeZone: "America/Tegucigalpa",
       day: "numeric",
@@ -209,7 +214,7 @@ export default function FacturasVendedor() {
       abortControllerRef.current = new AbortController()
 
       try {
-        if (facturasFiltradas.length === 0) {
+        if (currentPage === 1) {
           setLoading(true)
         } else {
           setCargandoLista(true)
@@ -257,7 +262,7 @@ export default function FacturasVendedor() {
       } catch (error) {
         console.error("Error al obtener el usuario autenticado:", error)
         setError("No se pudo autenticar al usuario. Por favor, inicia sesión nuevamente.")
-        router.push("/login")
+        router.push("/")
       }
     }
 
@@ -292,6 +297,8 @@ export default function FacturasVendedor() {
 
     let contenido = `${line}\n${centerText("INVERSIONES MEJIA")}\n${centerText("FACTURA")}\n${line}\nNo: ${factura.numero_factura}\nFecha: ${formatDateForDisplay(factura.fecha_emision)}\n${dashLine}\nCliente:`
     splitLongText(factura.nombre_cliente || "CONSUMIDOR FINAL", lineLength).forEach(l => { contenido += `\n${l}` })
+    contenido += `\n${dashLine}\nVendedor:`
+    splitLongText(factura.nombre_vendedor || "No registrado", lineLength).forEach(l => { contenido += `\n${l}` })
     contenido += `\n${dashLine}`
 
     if (factura.productos?.length) {
@@ -415,7 +422,7 @@ export default function FacturasVendedor() {
     ventanaImpresion.document.write(`
       <html>
         <head>
-          <title>Factura ${factura.numero_factura} - Vista Previa A7</title>
+          <title>Factura ${escapeHtml(factura.numero_factura)} - Vista Previa A7</title>
           <style>
             body { 
               font-family: 'Courier New', monospace; 
@@ -545,7 +552,7 @@ export default function FacturasVendedor() {
             <p>Formato optimizado para impresora POS (114mm)</p>
           </div>
           
-          <pre>${contenido}</pre>
+          <pre>${escapeHtml(contenido)}</pre>
           
           <div class="qr-code">
             ${qrDataURL ? `<img src="${qrDataURL}" alt="QR Code" />` : `<div style="padding: 20px; border: 2px dashed #ccc; color: #666;">QR: FACT-${factura.numero_factura}</div>`}
@@ -655,6 +662,8 @@ export default function FacturasVendedor() {
 
     let contenido = `${line}\n${centerText("INVERSIONES MEJIA")}\n${centerText("FACTURA FISCAL")}\n${line}\n${centerText(`Factura No: ${factura.numero_factura}`)}\n${centerText(`Fecha: ${formatDateForDisplay(factura.fecha_emision)}`)}\n${dashLine}\n${centerText("CLIENTE")}\n${dashLine}`
     splitLongText(factura.nombre_cliente || "CONSUMIDOR FINAL", lineLength).forEach(l => { contenido += `\n${centerText(l)}` })
+    contenido += `\n${dashLine}\n${centerText("VENDEDOR")}`
+    splitLongText(factura.nombre_vendedor || "No registrado", lineLength).forEach(l => { contenido += `\n${centerText(l)}` })
     contenido += `\n${dashLine}\n${centerText("PRODUCTOS")}\n${dashLine}`
 
     if (factura.productos?.length) {
@@ -666,7 +675,7 @@ export default function FacturasVendedor() {
       contenido += `\n${centerText("Sin productos")}\n${dashLine}`
     }
 
-    contenido += `\n${centerText("TOTAL A PAGAR")}\n${centerText(`L. ${factura.monto_total.toFixed(2)}`)}\n${line}\n${centerText(`CAI: ${factura.codigo_cai || "N/A"}`)}\n${centerText("Rango Autorizado: 000001 al 999999")}\n${dashLine}\n${centerText("ORIGINAL: CLIENTE")}\n${centerText("COPIA: EMISOR")}\n${dashLine}\n${centerText("Gracias por su compra")}\n${line}\n\n\n`
+    contenido += `\n${centerText("TOTAL A PAGAR")}\n${centerText(`L. ${factura.monto_total.toFixed(2)}`)}\n${centerText(factura.anulada ? "FACTURA ANULADA" : "FACTURA ACTIVA")}\n${line}\n${centerText(`CAI: ${factura.codigo_cai || "N/A"}`)}\n${centerText("Rango: " + (factura.rango_inicial_snapshot ?? "N/D") + " al " + (factura.rango_final_snapshot ?? "N/D"))}\n${dashLine}\n${centerText("ORIGINAL: CLIENTE")}\n${centerText("COPIA: EMISOR")}\n${dashLine}\n${centerText("Gracias por su compra")}\n${line}\n\n\n`
     return contenido
   }
 
@@ -685,7 +694,7 @@ export default function FacturasVendedor() {
           ventanaImpresion.document.write(`
             <html>
               <head>
-                <title>Factura ${factura.numero_factura} - MPT-II</title>
+                <title>Factura ${escapeHtml(factura.numero_factura)} - MPT-II</title>
                 <style>
                   body { 
                     font-family: 'Courier New', monospace; 
@@ -739,7 +748,7 @@ export default function FacturasVendedor() {
                 </style>
               </head>
               <body>
-                <pre>${contenidoMPTII}</pre>
+                <pre>${escapeHtml(contenidoMPTII)}</pre>
                 <div class="print-controls no-print">
                   <div style="text-align: center; margin-bottom: 16px; padding: 12px; background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%); border-radius: 6px; border-left: 4px solid #ffc107;">
                     <strong style="color: #856404;">✓ Formato MPT-II Organizado</strong><br>
@@ -833,6 +842,7 @@ export default function FacturasVendedor() {
     const contenido = `FACTURA: ${factura.numero_factura}
 FECHA: ${formatDateForDisplay(factura.fecha_emision)}
 CLIENTE: ${factura.nombre_cliente || "N/A"}
+VENDEDOR: ${factura.nombre_vendedor || "No registrado"}
 ${
   factura.productos && factura.productos.length > 0
     ? factura.productos
@@ -1010,6 +1020,7 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}`.trim()
                       </Badge>
                     </div>
                     <p className="text-xs sm:text-sm text-gray-600">{factura.nombre_cliente}</p>
+                    <p className="text-xs sm:text-sm text-gray-600">Vendedor: {factura.nombre_vendedor || "No registrado"}</p>
 
                     {factura.productos && factura.productos.length > 0 && (
                       <div className="mt-2 text-xs text-gray-500">
@@ -1162,6 +1173,7 @@ Estado: ${factura.anulada ? "ANULADA" : "ACTIVA"}`.trim()
                   <div>
                     <strong>Cliente:</strong>
                     <p>{facturaSeleccionada.nombre_cliente}</p>
+                    <p>Vendedor: {facturaSeleccionada.nombre_vendedor || "No registrado"}</p>
                   </div>
                   <div>
                     <strong>Fecha:</strong>
