@@ -16,7 +16,7 @@ npm run dev -- --hostname 127.0.0.1 --port 3100
 
 Abre http://127.0.0.1:3100. Los usuarios son `admin.dev` y `vendedor.dev`; las contraseñas aleatorias se guardan en `DEV_ADMIN_PASSWORD` y `DEV_VENDOR_PASSWORD` de `.env.development.local`. No se imprimen ni se suben a Git. La semilla incluye clientes de los cuatro tipos para cada día de la semana, productos con inventario y un CAI ficticio no fiscal.
 
-Si no utilizas el preparador, copia `.env.development.example` a `.env.development.local` y configura una base de pruebas independiente. `DEV_DB_CONNECTION_STRING` es obligatoria al ejecutar `npm run dev`: nunca se usa la conexión real como respaldo. La aplicación comprueba la propiedad SQL `ChurritosDevelopment=1`, que el preparador agrega exclusivamente a la base de pruebas. Una conexión sin esa marca se rechaza. El correo de desarrollo queda deshabilitado.
+Si no utilizas el preparador, crea localmente `.env.development.local` y configura `DEV_DB_CONNECTION_STRING` con una base de pruebas independiente. Esa variable es obligatoria al ejecutar `npm run dev`: nunca se usa la conexión real como respaldo. La aplicación comprueba la propiedad SQL `ChurritosDevelopment=1`, que el preparador agrega exclusivamente a la base de pruebas. Una conexión sin esa marca se rechaza. El correo de desarrollo queda deshabilitado.
 
 ## Compartir pruebas mediante Ports de VS Code
 
@@ -45,7 +45,7 @@ compartir es el de la aplicación (`3100`); la base de datos permanece local.
 
 ## Variables privadas
 
-Las plantillas `.env.example` y `.env.development.example` contienen únicamente ejemplos. Conserva tus archivos locales existentes. Los `.env*` reales están ignorados por Git; las variables SQL y de correo nunca deben llevar `NEXT_PUBLIC_`.
+Todos los archivos de entorno están ignorados por Git y excluidos de las subidas a Vercel, incluidos los ejemplos y las plantillas. Ningún `.env*`, `*.env` ni `*.env.*` debe versionarse. Conserva tus archivos locales existentes; las variables SQL y de correo nunca deben llevar `NEXT_PUBLIC_`.
 
 En producción, `DB_CONNECTION_STRING` tiene prioridad sobre `DB_SERVER`, `DB_PORT`, `DB_NAME`, `DB_USER` y `DB_PASSWORD`. Usa cifrado con `Encrypt=true;TrustServerCertificate=false;`. Configura las variables en el alojamiento y reinicia o despliega después de cambiarlas. `APP_URL` fija el origen exacto permitido; si no se configura, las escrituras exigen el mismo origen de la solicitud. Los correos requieren habilitación explícita, credenciales y `EMAIL_RECIPIENTS`.
 

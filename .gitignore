@@ -32,10 +32,10 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# Local credentials stay out of Git; the example contains placeholders only.
+# Ignore every environment file, including local examples and templates.
 .env*
-!.env.example
-!.env.development.example
+*.env
+*.env.*
 
 # vercel
 .vercel
