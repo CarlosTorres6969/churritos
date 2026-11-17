@@ -9,6 +9,7 @@ export const GET = withApi(async request => {
   const result = await pool.request().input("actor", sql.Int, user.id_personal).input("admin", sql.Bit, user.rol === "administrador").input("today", sql.Date, today()).query(`
     SELECT COUNT(*) ventas_historicas,COUNT(DISTINCT id_cliente) clientes_historicos,ISNULL(SUM(total),0) monto_historico,
       ISNULL(SUM(CASE WHEN fecha_negocio=@today THEN 1 ELSE 0 END),0) ventas_hoy,
+      COUNT(DISTINCT CASE WHEN fecha_negocio=@today THEN id_cliente END) clientes_hoy,
       ISNULL(SUM(CASE WHEN fecha_negocio=@today THEN total ELSE 0 END),0) monto_hoy,
       ISNULL(SUM(CASE WHEN tipo_pago='efectivo' THEN total ELSE 0 END),0) efectivo_historico,
       ISNULL(SUM(CASE WHEN tipo_pago='credito' THEN total ELSE 0 END),0) credito_historico

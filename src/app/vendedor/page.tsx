@@ -29,7 +29,6 @@ interface User {
 interface VendedorStats {
   totalVentas: number
   totalClientesAtendidos: number
-  totalProductosVendidos: number
   montoTotal: number
   creditosPendientes: number
   facturasPendientes: number
@@ -40,7 +39,6 @@ export default function VendedorDashboard() {
   const [stats, setStats] = useState<VendedorStats>({
     totalVentas: 0,
     totalClientesAtendidos: 0,
-    totalProductosVendidos: 0,
     montoTotal: 0,
     creditosPendientes: 0,
     facturasPendientes: 0,
@@ -49,8 +47,25 @@ export default function VendedorDashboard() {
   const router = useRouter()
 
   const loadDashboardData = async () => {
-  try {setLoading(true);const response=await fetch("/API/resumen",{cache:"no-store"});const result=await response.json();if(!response.ok)throw new Error(result.error);const d=result.data;setStats({totalVentas:d.ventas_historicas,totalClientesAtendidos:d.clientes_historicos,totalProductosVendidos:d.productos_historicos,montoTotal:d.monto_historico,creditosPendientes:d.creditos_pendientes,facturasPendientes:d.facturas_hoy})}catch(error){console.error("No se pudo cargar el resumen",error)}finally{setLoading(false)}
-}
+    try {
+      setLoading(true)
+      const response = await fetch("/API/resumen", { cache: "no-store" })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error)
+      const d = result.data
+      setStats({
+        totalVentas: d.ventas_hoy,
+        totalClientesAtendidos: d.clientes_hoy,
+        montoTotal: d.monto_hoy,
+        creditosPendientes: d.creditos_pendientes,
+        facturasPendientes: d.facturas_hoy,
+      })
+    } catch (error) {
+      console.error("No se pudo cargar el resumen", error)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const handleLogout = async () => { await logout() }
 
@@ -77,7 +92,6 @@ export default function VendedorDashboard() {
       icon: Package,
       href: "/vendedor/inventario",
       color: "bg-purple-500",
-      stats: stats.totalProductosVendidos,
     },
     {
       title: "Cierre del Día",
@@ -150,7 +164,7 @@ export default function VendedorDashboard() {
             <div className="flex flex-col sm:flex-row items-center space-y-2 sm:space-y-0 sm:space-x-4">
               <Badge variant="secondary" className="flex items-center gap-1">
                 <BarChart3 className="h-3 w-3" />
-                Datos Históricos
+                Datos del Día
               </Badge>
               <Button variant="outline" onClick={handleLogout} className="w-full sm:w-auto">
                 <LogOut className="h-4 w-4 mr-2" />
@@ -166,37 +180,37 @@ export default function VendedorDashboard() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-6 sm:mb-8">
           <Card className="w-full">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Ventas</CardTitle>
+              <CardTitle className="text-sm font-medium">Ventas de Hoy</CardTitle>
               <ShoppingCart className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-xl sm:text-2xl font-bold">{stats.totalVentas}</div>
               <p className="text-xs text-muted-foreground">
                 <TrendingUp className="inline h-3 w-3 mr-1" />
-                Todas las transacciones realizadas
+                Ventas realizadas hoy
               </p>
             </CardContent>
           </Card>
 
           <Card className="w-full">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Clientes Atendidos</CardTitle>
+              <CardTitle className="text-sm font-medium">Clientes Atendidos Hoy</CardTitle>
               <Users className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-xl sm:text-2xl font-bold">{stats.totalClientesAtendidos}</div>
-              <p className="text-xs text-muted-foreground">Total de clientes únicos atendidos</p>
+              <p className="text-xs text-muted-foreground">Clientes únicos con compras hoy</p>
             </CardContent>
           </Card>
 
           <Card className="w-full">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Monto Total</CardTitle>
+              <CardTitle className="text-sm font-medium">Monto Vendido Hoy</CardTitle>
               <DollarSign className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-xl sm:text-2xl font-bold">L. {stats.montoTotal.toFixed(2)}</div>
-              <p className="text-xs text-muted-foreground">Ingresos totales históricos</p>
+              <p className="text-xs text-muted-foreground">Ventas de hoy en efectivo y a crédito</p>
             </CardContent>
           </Card>
         </div>
@@ -220,9 +234,11 @@ export default function VendedorDashboard() {
                       <CardDescription className="text-xs sm:text-sm truncate">{item.description}</CardDescription>
                     </div>
                   </div>
-                  <Badge variant="outline" className="ml-2 shrink-0">
-                    {item.stats}
-                  </Badge>
+                  {item.stats !== undefined && (
+                    <Badge variant="outline" className="ml-2 shrink-0">
+                      {item.stats}
+                    </Badge>
+                  )}
                 </div>
               </CardHeader>
             </Card>

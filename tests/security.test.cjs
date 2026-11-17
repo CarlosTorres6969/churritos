@@ -38,14 +38,14 @@ test('los correos necesitan habilitación explícita y nunca se envían si falta
   for (const enabled of [undefined, '', 'false', 'TRUE', 'true']) {
     const states = []
     const notifications = loadTs('src/lib/notifications.ts', {
-      './business': business,
+      './payment-email': loadTs('src/lib/payment-email.ts', { './business': business }),
       './db': { async getConnection() { return { request() { return { input() { return this }, async query(statement) {
         if (statement.includes("estado='enviando'")) return { recordset: [{ id_pago: 1 }] }
         if (statement.startsWith('SELECT')) return { recordset: [{ monto: 10, fecha: new Date(), cliente: 'Cliente ficticio', vendedor: 'Vendedor ficticio' }] }
         states.push(statement); return { recordset: [] }
       } } } } } },
       nodemailer: { createTransport() { return { async sendMail() { sent++ } } } },
-    }, { process: { env: { EMAIL_ENABLED: enabled, EMAIL_USER: 'fixture@example.com', EMAIL_PASSWORD: 'fixture', EMAIL_RECIPIENTS: 'fixture@example.com' } } })
+    }, { process: { cwd: () => process.cwd(), env: { EMAIL_ENABLED: enabled, EMAIL_USER: 'fixture@example.com', EMAIL_PASSWORD: 'fixture', EMAIL_RECIPIENTS: 'fixture@example.com' } } })
     await notifications.notifyPayment(1)
     assert.ok(states.some(statement => statement.includes(enabled === 'true' ? "estado='enviado'" : "estado='omitido'")))
   }

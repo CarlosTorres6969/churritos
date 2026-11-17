@@ -6,6 +6,10 @@ const developmentOrigin = process.env.NODE_ENV === "development" ? getDevelopmen
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   serverExternalPackages: ["mssql", "nodemailer"],
+  outputFileTracingIncludes: {
+    "/API/Cliente-Credito/*/pagos": ["./src/assets/inversiones-mejia-logo.png"],
+    "/API/enviar-correo": ["./src/assets/inversiones-mejia-logo.png"],
+  },
   allowedDevOrigins: developmentOrigin ? [new URL(developmentOrigin).hostname] : [],
   async headers() {
     return [{ source: "/:path*", headers: [
